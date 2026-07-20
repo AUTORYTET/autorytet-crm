@@ -55,4 +55,54 @@ export default function AuthScreen() {
           Certyfikowani Doradcy Motoryzacyjni
         </div>
 
-        <div style={{
+        <div style={{ display: "flex", gap: 6, marginBottom: 20, background: "#F0EFEC", borderRadius: 8, padding: 4 }}>
+          <button
+            onClick={() => setMode("login")}
+            style={{ flex: 1, padding: "8px 0", borderRadius: 6, border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", background: mode === "login" ? "#111111" : "transparent", color: mode === "login" ? "#fff" : "#111111" }}
+          >
+            Logowanie
+          </button>
+          <button
+            onClick={() => setMode("register")}
+            style={{ flex: 1, padding: "8px 0", borderRadius: 6, border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", background: mode === "register" ? "#111111" : "transparent", color: mode === "register" ? "#fff" : "#111111" }}
+          >
+            Rejestracja
+          </button>
+        </div>
+
+        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {mode === "register" && (
+            <div>
+              <label style={label}>Imię i nazwisko</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} required style={input} />
+            </div>
+          )}
+          <div>
+            <label style={label}>E-mail</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required style={input} />
+          </div>
+          <div>
+            <label style={label}>Hasło</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} style={input} />
+          </div>
+
+          {error && <div style={{ background: "#FCEBEA", color: "#E4241B", fontSize: 12.5, padding: "8px 10px", borderRadius: 6 }}>{error}</div>}
+          {info && <div style={{ background: "#EAF5EE", color: "#1C8A4B", fontSize: 12.5, padding: "8px 10px", borderRadius: 6 }}>{info}</div>}
+
+          <button type="submit" disabled={loading} style={{ marginTop: 6, background: "#E4241B", color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
+            {loading ? "Chwileczkę…" : mode === "login" ? "Zaloguj się" : "Utwórz konto"}
+          </button>
+        </form>
+
+        {mode === "register" && (
+          <div style={{ marginTop: 14, fontSize: 11.5, color: "#9A9A9A", textAlign: "center" }}>
+            Pierwsza osoba, która się zarejestruje, automatycznie zostaje administratorem.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const label = { fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: "#9A9A9A", display: "block", marginBottom: 4 };
+const input = { border: "1px solid #E7E5E2", borderRadius: 8, padding: "9px 10px", fontSize: 13, width: "100%", outline: "none", boxSizing: "border-box" };
