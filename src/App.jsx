@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient.js";
 import AuthScreen from "./AuthScreen.jsx";
 import CRM from "./CRM.jsx";
+import ClientAccount from "./ClientAccount.jsx";
 
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = loading, null = logged out
@@ -44,5 +45,11 @@ export default function App() {
     );
   }
 
-  return <CRM user={session.user} profile={profile} onLogout={() => supabase.auth.signOut()} />;
+  // Route based on role: admins get the full CRM dashboard,
+  // everyone else (clients) gets the simple account view.
+  if (profile.role === "admin") {
+    return <CRM user={session.user} profile={profile} onLogout={() => supabase.auth.signOut()} />;
+  }
+
+  return <ClientAccount user={session.user} profile={profile} onLogout={() => supabase.auth.signOut()} />;
 }

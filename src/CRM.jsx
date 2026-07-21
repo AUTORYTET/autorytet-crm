@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Phone, Mail, MapPin, Building2, Car, Wallet, CalendarClock, Plus,
   Search, CheckCircle2, Circle, X, LayoutGrid, Users, ListChecks,
-  Handshake, Bell, Trash2, ChevronRight, LogOut, Loader2
+  Handshake, Bell, Trash2, ChevronRight, LogOut, Loader2, Settings, UserPlus, Edit2
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 
@@ -33,6 +33,14 @@ const STATUSES = [
 ];
 
 const FINANCING = ["Gotówka", "Kredyt", "Leasing", "Raty"];
+
+const VEHICLE_STATUSES = [
+  { key: "dostepny", label: "Dostępny", color: "#1C8A4B" },
+  { key: "rezerwacja", label: "Zarezerwowany", color: "#E4A400" },
+  { key: "sprzedany", label: "Sprzedany", color: "#6B6B6B" },
+];
+
+const BODY_TYPES = ["SUV", "Sedan", "Kombi", "Coupe", "Hatchback", "Cabrio", "Van"];
 
 const TASK_TYPES = {
   call: { label: "Telefon", icon: Phone },
@@ -102,6 +110,33 @@ function taskToDb(t, ownerId) {
 /* ---------- Logo ---------- */
 import logo from "./assets/logo.png";
 
+function vehicleFromDb(row) {
+  return {
+    id: row.id,
+    brand: row.brand || "",
+    model: row.model || "",
+    year: row.year || "",
+    price: row.price || "",
+    monthlyPayment: row.monthly_payment || "",
+    bodyType: row.body_type || "",
+    description: row.description || "",
+    status: row.status || "dostepny",
+    createdAt: row.created_at,
+  };
+}
+function vehicleToDb(v) {
+  return {
+    brand: v.brand,
+    model: v.model,
+    year: v.year ? Number(v.year) : null,
+    price: v.price ? Number(v.price) : null,
+    monthly_payment: v.monthlyPayment ? Number(v.monthlyPayment) : null,
+    body_type: v.bodyType,
+    description: v.description,
+    status: v.status || "dostepny",
+  };
+}
+
 function Logo({ compact }) {
   return (
     <div style={{ display: "flex", alignItems: "center" }}>
@@ -129,11 +164,15 @@ export default function CRM({ user, profile, onLogout }) {
   useFonts();
   const [clients, setClients] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("dashboard");
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [showClientForm, setShowClientForm] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
+  const [showVehicleForm, setShowVehicleForm] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState(null);
+  const [vehicleStatusFilter, setVehicleStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [error, setError] = useState(null);
@@ -141,14 +180,17 @@ export default function CRM({ user, profile, onLogout }) {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: clientRows, error: e1 }, { data: taskRows, error: e2 }] = await Promise.all([
+      const [{ data: clientRows, error: e1 }, { data: taskRows, error: e2 }, { data: vehicleRows, error: e3 }] = await Promise.all([
         supabase.from("clients").select("*").order("created_at", { ascending: false }),
         supabase.from("tasks").select("*").order("due_date", { ascending: true }),
+        supabase.from("cars").select("*").order("created_at", { ascending: false }),
       ]);
       if (e1) throw e1;
       if (e2) throw e2;
+      if (e3) throw e3;
       setClients((clientRows || []).map(clientFromDb));
       setTasks((taskRows || []).map(taskFromDb));
+      setVehicles((vehicleRows || []).map(vehicleFromDb));
     } catch (e) {
       setError("Nie udało się wczytać danych: " + (e.message || ""));
     } finally {
@@ -221,6 +263,38 @@ export default function CRM({ user, profile, onLogout }) {
     }
   }, [tasks]);
 
+  const upsertVehicle = useCallback(async (vehicle) => {
+    try {
+      if (vehicle.id) {
+        const { data, error } = await supabase.from("cars").update(vehicleToDb(vehicle)).eq("id", vehicle.id).select().single();
+        if (error) throw error;
+        setVehicles((prev) => prev.map((v) => (v.id === data.id ? vehicleFromDb(data) : v)));
+      } else {
+        const { data, error } = await supabase.from("cars").insert(vehicleToDb(vehicle)).select().single();
+        if (error) throw error;
+        setVehicles((prev) => [vehicleFromDb(data), ...prev]);
+      }
+    } catch (e) {
+      setError("Nie udało się zapisać pojazdu: " + (e.message || ""));
+    }
+  }, []);
+
+  const removeVehicle = useCallback(async (id) => {
+    const prevVehicles = vehicles;
+    setVehicles((prev) => prev.filter((v) => v.id !== id));
+    try {
+      const { error } = await supabase.from("cars").delete().eq("id", id);
+      if (error) throw error;
+    } catch (e) {
+      setVehicles(prevVehicles);
+      setError("Nie udało się usunąć pojazdu: " + (e.message || ""));
+    }
+  }, [vehicles]);
+
+  const filteredVehicles = useMemo(() => {
+    return vehicles.filter((v) => vehicleStatusFilter === "all" || v.status === vehicleStatusFilter);
+  }, [vehicles, vehicleStatusFilter]);
+
   const clientNameById = useMemo(() => {
     const map = {};
     clients.forEach((c) => { map[c.id] = c.name; });
@@ -281,6 +355,10 @@ export default function CRM({ user, profile, onLogout }) {
             <NavBtn active={tab === "dashboard"} onClick={() => setTab("dashboard")} icon={LayoutGrid} label="Pulpit" />
             <NavBtn active={tab === "clients"} onClick={() => { setTab("clients"); setSelectedClientId(null); }} icon={Users} label="Klienci" />
             <NavBtn active={tab === "tasks"} onClick={() => setTab("tasks")} icon={ListChecks} label="Zadania" />
+            <NavBtn active={tab === "vehicles"} onClick={() => setTab("vehicles")} icon={Car} label="Pojazdy" />
+            {profile.role === "admin" && (
+              <NavBtn active={tab === "settings"} onClick={() => setTab("settings")} icon={Settings} label="Ustawienia" />
+            )}
           </nav>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ textAlign: "right" }}>
@@ -347,6 +425,21 @@ export default function CRM({ user, profile, onLogout }) {
               onOpenClient={(id) => { setSelectedClientId(id); setTab("clients"); }}
             />
           )}
+
+          {tab === "vehicles" && (
+            <VehiclesList
+              vehicles={filteredVehicles}
+              statusFilter={vehicleStatusFilter}
+              setStatusFilter={setVehicleStatusFilter}
+              onAdd={() => { setEditingVehicle(null); setShowVehicleForm(true); }}
+              onEdit={(v) => { setEditingVehicle(v); setShowVehicleForm(true); }}
+              onDelete={(id) => removeVehicle(id)}
+            />
+          )}
+
+          {tab === "settings" && profile.role === "admin" && (
+            <SettingsPanel user={user} />
+          )}
         </main>
 
         {showClientForm && (
@@ -357,6 +450,17 @@ export default function CRM({ user, profile, onLogout }) {
               const saved = await upsertClient(client);
               setShowClientForm(false);
               if (saved) setSelectedClientId(saved.id);
+            }}
+          />
+        )}
+
+        {showVehicleForm && (
+          <VehicleFormModal
+            initial={editingVehicle}
+            onClose={() => setShowVehicleForm(false)}
+            onSave={async (vehicle) => {
+              await upsertVehicle(vehicle);
+              setShowVehicleForm(false);
             }}
           />
         )}
@@ -773,6 +877,202 @@ function Field({ label, value, onChange, type = "text", required }) {
 }
 
 /* ---------- Styles ---------- */
+
+/* ---------- Vehicles (Pojazdy) ---------- */
+function VehicleStatusPill({ statusKey }) {
+  const s = VEHICLE_STATUSES.find((x) => x.key === statusKey) || VEHICLE_STATUSES[0];
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700,
+      padding: "4px 10px", borderRadius: 20, background: s.color + "1A", color: s.color,
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />
+      {s.label}
+    </span>
+  );
+}
+
+function VehiclesList({ vehicles, statusFilter, setStatusFilter, onAdd, onEdit, onDelete }) {
+  return (
+    <div style={S.stack}>
+      <div style={S.toolbar}>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={S.select}>
+          <option value="all">Wszystkie statusy</option>
+          {VEHICLE_STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+        <button onClick={onAdd} style={S.primaryBtn}>
+          <Plus size={15} /> Nowy pojazd
+        </button>
+      </div>
+
+      {vehicles.length === 0 ? (
+        <div style={{ ...S.card, textAlign: "center", padding: 48 }}>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 18, marginBottom: 6 }}>Brak pojazdów</div>
+          <div style={{ fontSize: 13, color: "#9A9A9A", marginBottom: 16 }}>Dodaj pierwszy pojazd do oferty.</div>
+          <button onClick={onAdd} style={{ ...S.primaryBtn, margin: "0 auto" }}><Plus size={15} /> Nowy pojazd</button>
+        </div>
+      ) : (
+        <div style={S.card}>
+          <div style={S.tableHeader}>
+            <span style={{ flex: 2 }}>Pojazd</span>
+            <span style={{ flex: 1 }}>Rok</span>
+            <span style={{ flex: 1.2 }}>Cena</span>
+            <span style={{ flex: 1.2 }}>Rata</span>
+            <span style={{ flex: 1.2 }}>Status</span>
+            <span style={{ flex: 0.6 }}></span>
+          </div>
+          {vehicles.map((v) => (
+            <div key={v.id} className="hoverRow" style={S.tableRow}>
+              <span style={{ flex: 2, textAlign: "left" }}>
+                <div style={{ fontWeight: 700, fontSize: 13.5 }}>{v.brand} {v.model}</div>
+                <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{v.bodyType || "—"}</div>
+              </span>
+              <span style={{ flex: 1, fontSize: 13, textAlign: "left" }}>{v.year || "—"}</span>
+              <span style={{ flex: 1.2, fontSize: 13, textAlign: "left" }}>{v.price ? `${Number(v.price).toLocaleString("pl-PL")} zł` : "—"}</span>
+              <span style={{ flex: 1.2, fontSize: 13, textAlign: "left" }}>{v.monthlyPayment ? `${Number(v.monthlyPayment).toLocaleString("pl-PL")} zł/mc` : "—"}</span>
+              <span style={{ flex: 1.2, textAlign: "left" }}><VehicleStatusPill statusKey={v.status} /></span>
+              <span style={{ flex: 0.6, display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                <button className="iconBtn" onClick={() => onEdit(v)} style={S.iconBtnStyle}><Edit2 size={14} /></button>
+                <button onClick={() => { if (window.confirm("Usunąć ten pojazd?")) onDelete(v.id); }} style={S.dangerBtn}><Trash2 size={14} /></button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VehicleFormModal({ initial, onClose, onSave }) {
+  const [form, setForm] = useState(initial || {
+    brand: "", model: "", year: "", price: "", monthlyPayment: "",
+    bodyType: BODY_TYPES[0], description: "", status: "dostepny",
+  });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  return (
+    <div style={S.modalOverlay} onClick={onClose}>
+      <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 18, fontWeight: 600 }}>
+            {initial ? "Edytuj pojazd" : "Nowy pojazd"}
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none" }}><X size={18} /></button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px" }}>
+          <Field label="Marka" value={form.brand} onChange={set("brand")} required />
+          <Field label="Model" value={form.model} onChange={set("model")} required />
+          <Field label="Rok produkcji" value={form.year} onChange={set("year")} type="number" />
+          <div>
+            <div style={S.label}>Nadwozie</div>
+            <select value={form.bodyType} onChange={set("bodyType")} style={{ ...S.select, width: "100%" }}>
+              {BODY_TYPES.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+          <Field label="Cena (zł)" value={form.price} onChange={set("price")} type="number" />
+          <Field label="Rata miesięczna (zł)" value={form.monthlyPayment} onChange={set("monthlyPayment")} type="number" />
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={S.label}>Status</div>
+            <select value={form.status} onChange={set("status")} style={{ ...S.select, width: "100%" }}>
+              {VEHICLE_STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={S.label}>Opis</div>
+            <textarea
+              value={form.description}
+              onChange={set("description")}
+              rows={3}
+              style={{ ...S.input, resize: "vertical", fontFamily: "inherit" }}
+            />
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <button onClick={onClose} style={S.secondaryBtn}>Anuluj</button>
+          <button onClick={() => onSave({ ...initial, ...form })} style={S.primaryBtn}>Zapisz pojazd</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Settings (Ustawienia) - admin only ---------- */
+function SettingsPanel({ user }) {
+  const [staff, setStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteRole, setInviteRole] = useState("doradca");
+  const [msg, setMsg] = useState(null);
+
+  const loadStaff = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+    setStaff(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadStaff(); }, [loadStaff]);
+
+  const changeRole = async (id, role) => {
+    await supabase.from("profiles").update({ role }).eq("id", id);
+    setStaff((prev) => prev.map((p) => (p.id === id ? { ...p, role } : p)));
+  };
+
+  return (
+    <div style={S.stack}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Zespół i uprawnienia</div>
+        <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
+          Zarządzaj rolami osób z dostępem do panelu CRM. Nowe konta zakłada się w Supabase (Authentication),
+          a tutaj przypisujesz im rolę administratora lub doradcy.
+        </div>
+        {loading ? (
+          <div style={{ fontSize: 13, color: "#9A9A9A" }}>Wczytywanie…</div>
+        ) : staff.length === 0 ? (
+          <EmptyNote text="Brak kont w systemie." />
+        ) : (
+          <div>
+            <div style={S.tableHeader}>
+              <span style={{ flex: 2 }}>Osoba</span>
+              <span style={{ flex: 1.4 }}>Rola</span>
+            </div>
+            {staff.map((p) => (
+              <div key={p.id} style={S.tableRow}>
+                <span style={{ flex: 2, textAlign: "left" }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5 }}>{p.full_name || "—"}</div>
+                  <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{p.id}</div>
+                </span>
+                <span style={{ flex: 1.4, textAlign: "left" }}>
+                  <select
+                    value={p.role}
+                    onChange={(e) => changeRole(p.id, e.target.value)}
+                    style={S.select}
+                    disabled={p.id === user.id}
+                  >
+                    <option value="admin">Administrator</option>
+                    <option value="doradca">Doradca</option>
+                    <option value="client">Klient</option>
+                  </select>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={S.card}>
+        <div style={S.cardTitle}>Dodanie nowego pracownika</div>
+        <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
+          Aby dodać nowego doradcę lub administratora: w Supabase → Authentication → Users kliknij
+          "Add user" i utwórz konto e-mail + hasło. Osoba pojawi się automatycznie na liście powyżej
+          zaraz po utworzeniu konta — wtedy przypisz jej właściwą rolę (Doradca lub Administrator).
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const S = {
   appShell: {
     fontFamily: "'Inter', sans-serif", background: "#F3F3F1", minHeight: 600, color: "#111111",
