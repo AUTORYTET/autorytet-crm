@@ -555,9 +555,9 @@
   <div class="hero-scrim"></div>
   <div class="hero-dots" id="heroDots"></div>
   <div class="wrap hero-inner">
-    <span class="eyebrow">Certyfikowani Doradcy Motoryzacyjni</span>
-    <h1>Znajdź swój <em>następny samochód</em> bez zgadywania</h1>
-    <p>Sprzedaż, wynajem, finansowanie i ubezpieczenie — wszystko pod opieką jednego certyfikowanego doradcy, od pierwszej rozmowy do odbioru kluczyków.</p>
+    <span class="eyebrow" data-edit-key="hero_eyebrow">Certyfikowani Doradcy Motoryzacyjni</span>
+    <h1 data-edit-key="hero_h1">Znajdź swój <em>następny samochód</em> bez zgadywania</h1>
+    <p data-edit-key="hero_p">Sprzedaż, wynajem, finansowanie i ubezpieczenie — wszystko pod opieką jednego certyfikowanego doradcy, od pierwszej rozmowy do odbioru kluczyków.</p>
   </div>
   <div class="wrap" style="position:relative;z-index:3;">
     <form class="search-panel">
@@ -628,8 +628,8 @@
 
 <section class="categories wrap" style="padding-top:130px;">
   <div class="section-head">
-    <h2>Jak możemy pomóc</h2>
-    <p>Cztery obszary, jeden certyfikowany doradca prowadzący Cię przez cały proces.</p>
+    <h2 data-edit-key="services_h2">Jak możemy pomóc</h2>
+    <p data-edit-key="services_p">Cztery obszary, jeden certyfikowany doradca prowadzący Cię przez cały proces.</p>
   </div>
   <div class="cat-grid">
     <div class="cat-card">
@@ -657,44 +657,14 @@
 
 <section class="listings wrap" id="sprzedaz">
   <div class="section-head">
-    <h2>Wybrane oferty</h2>
-    <p>Miejsce na Twoje samochody — zdjęcia dodamy, gdy będą gotowe.</p>
+    <h2 data-edit-key="listings_h2">Wybrane oferty</h2>
+    <p data-edit-key="listings_p">Aktualne oferty dobrane dla Ciebie.</p>
   </div>
-  <div class="listing-grid">
+  <div class="listing-grid" id="listingGrid">
     <div class="listing-card">
-      <div class="listing-photo"><span>Miejsce na zdjęcie</span></div>
+      <div class="listing-photo"><span>Wczytywanie ofert…</span></div>
       <div class="listing-body">
-        <span class="listing-tag">Nowy</span>
-        <h3>Model przykładowy A</h3>
-        <div class="listing-meta">2026 · Automat · Diesel</div>
-        <div class="listing-foot">
-          <div class="listing-price">od 149 900 zł<br><small>lub 1 290 zł / mies.</small></div>
-          <div class="listing-arrow">&#8594;</div>
-        </div>
-      </div>
-    </div>
-    <div class="listing-card">
-      <div class="listing-photo"><span>Miejsce na zdjęcie</span></div>
-      <div class="listing-body">
-        <span class="listing-tag">Używany</span>
-        <h3>Model przykładowy B</h3>
-        <div class="listing-meta">2023 · Automat · Benzyna</div>
-        <div class="listing-foot">
-          <div class="listing-price">od 98 500 zł<br><small>lub 890 zł / mies.</small></div>
-          <div class="listing-arrow">&#8594;</div>
-        </div>
-      </div>
-    </div>
-    <div class="listing-card">
-      <div class="listing-photo"><span>Miejsce na zdjęcie</span></div>
-      <div class="listing-body">
-        <span class="listing-tag">Elektryczny</span>
-        <h3>Model przykładowy C</h3>
-        <div class="listing-meta">2026 · Automat · EV</div>
-        <div class="listing-foot">
-          <div class="listing-price">od 189 900 zł<br><small>lub 1 650 zł / mies.</small></div>
-          <div class="listing-arrow">&#8594;</div>
-        </div>
+        <h3>&nbsp;</h3>
       </div>
     </div>
   </div>
@@ -706,8 +676,8 @@
       <div class="stamp">
         <div class="stamp-text"><span class="check">&#10003;</span>Certyfikowany<br>Doradca<br>Motoryzacyjny</div>
       </div>
-      <h2>Nie jesteśmy salonem. Jesteśmy Twoim doradcą.</h2>
-      <p>Każdy klient AUTORYTET pracuje z jednym certyfikowanym doradcą od pierwszego kontaktu do odbioru samochodu — bez przekazywania między działami.</p>
+      <h2 data-edit-key="trust_h2">Nie jesteśmy salonem. Jesteśmy Twoim doradcą.</h2>
+      <p data-edit-key="trust_p">Każdy klient AUTORYTET pracuje z jednym certyfikowanym doradcą od pierwszego kontaktu do odbioru samochodu — bez przekazywania między działami.</p>
     </div>
     <div class="trust-stats">
       <div class="stat">
@@ -728,8 +698,8 @@
 
 <section class="cta-band" id="kontakt">
   <div class="wrap">
-    <h2>Porozmawiajmy o Twoim aucie</h2>
-    <p>Napisz lub zadzwoń — odpowiemy tego samego dnia roboczego.</p>
+    <h2 data-edit-key="cta_h2">Porozmawiajmy o Twoim aucie</h2>
+    <p data-edit-key="cta_p">Napisz lub zadzwoń — odpowiemy tego samego dnia roboczego.</p>
     <a href="#" class="btn-white">Skontaktuj się</a>
   </div>
 </section>
@@ -853,6 +823,101 @@
       }
       window.location.href = '/crm';
     });
+
+    // ---------- Dynamiczne oferty (samochody z bazy) ----------
+    function formatPrice(n){
+      if(n === null || n === undefined || n === '') return null;
+      return new Intl.NumberFormat('pl-PL').format(n) + ' zł';
+    }
+    function carCardHtml(car){
+      var photo = car.image_url
+        ? '<img src="' + car.image_url + '" alt="' + car.brand + ' ' + car.model + '" style="width:100%;height:100%;object-fit:cover;">'
+        : '<span>Miejsce na zdjęcie</span>';
+      var price = formatPrice(car.price);
+      var monthly = formatPrice(car.monthly_payment);
+      var priceHtml = price ? price : 'Cena na zapytanie';
+      var monthlyHtml = monthly ? '<br><small>lub ' + monthly + ' / mies.</small>' : '';
+      var meta = [car.year, car.body_type].filter(Boolean).join(' · ');
+      return '' +
+        '<div class="listing-card">' +
+          '<div class="listing-photo">' + photo + '</div>' +
+          '<div class="listing-body">' +
+            '<h3>' + (car.brand || '') + ' ' + (car.model || '') + '</h3>' +
+            '<div class="listing-meta">' + meta + '</div>' +
+            '<div class="listing-foot">' +
+              '<div class="listing-price">' + priceHtml + monthlyHtml + '</div>' +
+              '<div class="listing-arrow">&#8594;</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    }
+    async function loadCars(){
+      var grid = document.getElementById('listingGrid');
+      if(!grid) return;
+      var result = await sb.from('cars').select('*').eq('status', 'dostepny').order('created_at', { ascending: false }).limit(6);
+      if(result.error || !result.data || result.data.length === 0){
+        grid.innerHTML = '<div class="listing-card"><div class="listing-photo"><span>Wkrótce nowe oferty</span></div><div class="listing-body"><h3>&nbsp;</h3></div></div>';
+        return;
+      }
+      grid.innerHTML = result.data.map(carCardHtml).join('');
+    }
+    loadCars();
+
+    // ---------- Edytowalny tekst strony (tylko dla administratora) ----------
+    async function applySiteContent(){
+      var result = await sb.from('site_content').select('*');
+      if(result.error || !result.data) return;
+      result.data.forEach(function(row){
+        var el = document.querySelector('[data-edit-key="' + row.key + '"]');
+        if(el) el.textContent = row.value;
+      });
+    }
+    applySiteContent();
+
+    async function saveSiteContent(key, value){
+      await sb.from('site_content').upsert({ key: key, value: value, updated_at: new Date().toISOString() });
+    }
+
+    function enableEditMode(){
+      var toggle = document.createElement('button');
+      toggle.textContent = 'Tryb edycji: wyłączony';
+      toggle.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:1001;background:#111;color:#fff;border:none;padding:10px 16px;border-radius:24px;font-size:13px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,0.3);';
+      document.body.appendChild(toggle);
+
+      var editing = false;
+      var editableEls = document.querySelectorAll('[data-edit-key]');
+
+      toggle.addEventListener('click', function(){
+        editing = !editing;
+        toggle.textContent = editing ? 'Tryb edycji: włączony (klikaj tekst)' : 'Tryb edycji: wyłączony';
+        toggle.style.background = editing ? 'var(--red)' : '#111';
+        editableEls.forEach(function(el){
+          el.contentEditable = editing ? 'true' : 'false';
+          el.style.outline = editing ? '1px dashed rgba(228,36,27,0.6)' : 'none';
+          el.style.cursor = editing ? 'text' : '';
+        });
+      });
+
+      editableEls.forEach(function(el){
+        el.addEventListener('blur', function(){
+          if(!editing) return;
+          var key = el.getAttribute('data-edit-key');
+          var value = el.textContent.trim();
+          saveSiteContent(key, value);
+        });
+      });
+    }
+
+    async function checkAdminEditMode(){
+      var sessionResult = await sb.auth.getSession();
+      var session = sessionResult.data.session;
+      if(!session) return;
+      var profile = await sb.from('profiles').select('role').eq('id', session.user.id).single();
+      if(!profile.error && profile.data && profile.data.role === 'admin'){
+        enableEditMode();
+      }
+    }
+    checkAdminEditMode();
   })();
 </script>
 </body>
