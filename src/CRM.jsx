@@ -121,6 +121,7 @@ function vehicleFromDb(row) {
     bodyType: row.body_type || "",
     description: row.description || "",
     status: row.status || "dostepny",
+    imageUrl: row.image_url || "",
     createdAt: row.created_at,
   };
 }
@@ -134,6 +135,7 @@ function vehicleToDb(v) {
     body_type: v.bodyType,
     description: v.description,
     status: v.status || "dostepny",
+    image_url: v.imageUrl || null,
   };
 }
 
@@ -946,9 +948,10 @@ function VehiclesList({ vehicles, statusFilter, setStatusFilter, onAdd, onEdit, 
 function VehicleFormModal({ initial, onClose, onSave }) {
   const [form, setForm] = useState(initial || {
     brand: "", model: "", year: "", price: "", monthlyPayment: "",
-    bodyType: BODY_TYPES[0], description: "", status: "dostepny",
+    bodyType: BODY_TYPES[0], description: "", status: "dostepny", imageUrl: "",
   });
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setField = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setVal = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
     <div style={S.modalOverlay} onClick={onClose}>
@@ -960,20 +963,23 @@ function VehicleFormModal({ initial, onClose, onSave }) {
           <button onClick={onClose} style={{ background: "none", border: "none" }}><X size={18} /></button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px" }}>
-          <Field label="Marka" value={form.brand} onChange={set("brand")} required />
-          <Field label="Model" value={form.model} onChange={set("model")} required />
-          <Field label="Rok produkcji" value={form.year} onChange={set("year")} type="number" />
+          <Field label="Marka" value={form.brand} onChange={setVal("brand")} required />
+          <Field label="Model" value={form.model} onChange={setVal("model")} required />
+          <Field label="Rok produkcji" value={form.year} onChange={setVal("year")} type="number" />
           <div>
             <div style={S.label}>Nadwozie</div>
-            <select value={form.bodyType} onChange={set("bodyType")} style={{ ...S.select, width: "100%" }}>
+            <select value={form.bodyType} onChange={setField("bodyType")} style={{ ...S.select, width: "100%" }}>
               {BODY_TYPES.map((b) => <option key={b} value={b}>{b}</option>)}
             </select>
           </div>
-          <Field label="Cena (zł)" value={form.price} onChange={set("price")} type="number" />
-          <Field label="Rata miesięczna (zł)" value={form.monthlyPayment} onChange={set("monthlyPayment")} type="number" />
+          <Field label="Cena (zł)" value={form.price} onChange={setVal("price")} type="number" />
+          <Field label="Rata miesięczna (zł)" value={form.monthlyPayment} onChange={setVal("monthlyPayment")} type="number" />
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Field label="Link do zdjęcia (URL)" value={form.imageUrl} onChange={setVal("imageUrl")} />
+          </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <div style={S.label}>Status</div>
-            <select value={form.status} onChange={set("status")} style={{ ...S.select, width: "100%" }}>
+            <select value={form.status} onChange={setField("status")} style={{ ...S.select, width: "100%" }}>
               {VEHICLE_STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
             </select>
           </div>
@@ -981,7 +987,7 @@ function VehicleFormModal({ initial, onClose, onSave }) {
             <div style={S.label}>Opis</div>
             <textarea
               value={form.description}
-              onChange={set("description")}
+              onChange={setField("description")}
               rows={3}
               style={{ ...S.input, resize: "vertical", fontFamily: "inherit" }}
             />
