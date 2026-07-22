@@ -122,6 +122,8 @@ function vehicleFromDb(row) {
     description: row.description || "",
     status: row.status || "dostepny",
     imageUrl: row.image_url || "",
+    imageUrls: Array.isArray(row.image_urls) ? row.image_urls : [],
+    sourceUrl: row.source_url || "",
     createdAt: row.created_at,
   };
 }
@@ -136,6 +138,8 @@ function vehicleToDb(v) {
     description: v.description,
     status: v.status || "dostepny",
     image_url: v.imageUrl || null,
+    image_urls: v.imageUrls && v.imageUrls.length ? v.imageUrls : null,
+    source_url: v.sourceUrl || null,
   };
 }
 
@@ -948,10 +952,48 @@ function VehiclesList({ vehicles, statusFilter, setStatusFilter, onAdd, onEdit, 
 function VehicleFormModal({ initial, onClose, onSave }) {
   const [form, setForm] = useState(initial || {
     brand: "", model: "", year: "", price: "", monthlyPayment: "",
-    bodyType: BODY_TYPES[0], description: "", status: "dostepny", imageUrl: "",
+    bodyType: BODY_TYPES[0], description: "", status: "dostepny",
+    imageUrl: "", imageUrls: [], sourceUrl: "",
   });
   const setField = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const setVal = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const [importUrl, setImportUrl] = useState(form.sourceUrl || "");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState(null);
+  const [importWarnings, setImportWarnings] = useState([]);
+
+  const importFromOtomoto = async () => {
+    if (!importUrl.trim()) return;
+    setImporting(true);
+    setImportError(null);
+    setImportWarnings([]);
+    try {
+      const r = await fetch("/api/otomoto-import?url=" + encodeURIComponent(importUrl.trim()));
+      const data = await r.json();
+      if (!r.ok) {
+        setImportError(data.error || "Nie udało się pobrać danych.");
+        return;
+      }
+      setForm((f) => ({
+        ...f,
+        brand: data.brand || f.brand,
+        model: data.model || f.model,
+        year: data.year || f.year,
+        price: data.price || f.price,
+        bodyType: data.bodyType || f.bodyType,
+        description: data.description || f.description,
+        imageUrl: (data.images && data.images[0]) || f.imageUrl,
+        imageUrls: data.images && data.images.length ? data.images : f.imageUrls,
+        sourceUrl: data.sourceUrl || importUrl.trim(),
+      }));
+      setImportWarnings(data.warnings || []);
+    } catch (e) {
+      setImportError("Błąd połączenia z serwerem.");
+    } finally {
+      setImporting(false);
+    }
+  };
 
   return (
     <div style={S.modalOverlay} onClick={onClose}>
@@ -962,6 +1004,54 @@ function VehicleFormModal({ initial, onClose, onSave }) {
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none" }}><X size={18} /></button>
         </div>
+
+        <div style={{ background: "#F3F3F1", borderRadius: 8, padding: 12, marginBottom: 16 }}>
+          <div style={{ ...S.label, marginBottom: 6 }}>Wklej link do ogłoszenia OtoMoto</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={importUrl}
+              onChange={(e) => setImportUrl(e.target.value)}
+              placeholder="https://www.otomoto.pl/oferta/..."
+              style={{ ...S.input, flex: 1 }}
+            />
+            <button
+              type="button"
+              onClick={importFromOtomoto}
+              disabled={importing || !importUrl.trim()}
+              style={{ ...S.primaryBtn, whiteSpace: "nowrap", opacity: importing ? 0.6 : 1 }}
+            >
+              {importing ? "Pobieranie…" : "Pobierz dane"}
+            </button>
+          </div>
+          {importError && (
+            <div style={{ color: "#E4241B", fontSize: 12.5, marginTop: 8 }}>{importError}</div>
+          )}
+          {importWarnings.length > 0 && (
+            <div style={{ color: "#8a6d00", fontSize: 12.5, marginTop: 8 }}>
+              {importWarnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
+            </div>
+          )}
+          {form.imageUrls && form.imageUrls.length > 0 && (
+            <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+              {form.imageUrls.slice(0, 10).map((img, i) => (
+                <img
+                  key={i}
+                  src={img}
+                  alt=""
+                  onClick={() => setForm((f) => ({ ...f, imageUrl: img }))}
+                  style={{
+                    width: 56, height: 56, objectFit: "cover", borderRadius: 4, cursor: "pointer",
+                    border: form.imageUrl === img ? "2px solid #E4241B" : "2px solid transparent",
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          <div style={{ fontSize: 11.5, color: "#9A9A9A", marginTop: 8 }}>
+            Dane pobrane automatycznie mogą wymagać sprawdzenia — zawsze zerknij, czy wszystko się zgadza.
+          </div>
+        </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px" }}>
           <Field label="Marka" value={form.brand} onChange={setVal("brand")} required />
           <Field label="Model" value={form.model} onChange={setVal("model")} required />
