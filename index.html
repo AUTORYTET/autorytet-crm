@@ -79,7 +79,7 @@
     color:var(--white);
     position:relative;
     overflow:hidden;
-    padding:80px 0 0;
+    padding:80px 0 90px;
     min-height:680px;
     display:flex;
     flex-direction:column;
@@ -163,7 +163,7 @@
     display:flex;gap:16px;flex-wrap:wrap;
     align-items:flex-end;
     box-shadow:0 20px 60px rgba(0,0,0,0.3);
-    transform:translateY(40px);
+    transform:translateY(24px);
   }
   .search-field{
     flex:1;min-width:150px;
@@ -560,36 +560,30 @@
     <p data-edit-key="hero_p">Sprzedaż, wynajem, finansowanie i ubezpieczenie — wszystko pod opieką jednego certyfikowanego doradcy, od pierwszej rozmowy do odbioru kluczyków.</p>
   </div>
   <div class="wrap" style="position:relative;z-index:3;">
-    <form class="search-panel">
+    <form class="search-panel" id="searchPanel">
       <div class="search-field">
         <label>Marka</label>
-        <select>
-          <option>Wybierz markę</option>
-          <option>BMW</option>
-          <option>Audi</option>
-          <option>Mercedes-Benz</option>
-          <option>Volkswagen</option>
-          <option>Toyota</option>
+        <select id="filterBrand">
+          <option value="">Wybierz markę</option>
         </select>
       </div>
       <div class="search-field">
         <label>Typ nadwozia</label>
-        <select>
-          <option>Dowolny</option>
-          <option>SUV</option>
-          <option>Sedan</option>
-          <option>Kombi</option>
-          <option>Hatchback</option>
+        <select id="filterBodyType">
+          <option value="">Dowolny</option>
+          <option value="SUV">SUV</option>
+          <option value="Sedan">Sedan</option>
+          <option value="Kombi">Kombi</option>
+          <option value="Coupe">Coupe</option>
+          <option value="Hatchback">Hatchback</option>
+          <option value="Cabrio">Cabrio</option>
+          <option value="Van">Van</option>
         </select>
       </div>
       <div class="search-field">
         <label>Budżet do</label>
-        <select>
-          <option>Bez limitu</option>
-          <option>100 000 zł</option>
-          <option>150 000 zł</option>
-          <option>250 000 zł</option>
-          <option>400 000 zł</option>
+        <select id="filterBudget">
+          <option value="">Bez limitu</option>
         </select>
       </div>
       <button type="submit" class="search-submit">Szukaj</button>
@@ -851,17 +845,66 @@
           '</div>' +
         '</div>';
     }
-    async function loadCars(){
+    async function loadCars(filters){
+      filters = filters || {};
       var grid = document.getElementById('listingGrid');
       if(!grid) return;
-      var result = await sb.from('cars').select('*').eq('status', 'dostepny').order('created_at', { ascending: false }).limit(6);
+      grid.innerHTML = '<div class="listing-card"><div class="listing-photo"><span>Wczytywanie ofert…</span></div><div class="listing-body"><h3>&nbsp;</h3></div></div>';
+      var query = sb.from('cars').select('*').eq('status', 'dostepny');
+      if(filters.brand) query = query.eq('brand', filters.brand);
+      if(filters.bodyType) query = query.eq('body_type', filters.bodyType);
+      if(filters.budget) query = query.lte('price', filters.budget);
+      query = query.order('created_at', { ascending: false }).limit(filters.brand || filters.bodyType || filters.budget ? 24 : 6);
+      var result = await query;
       if(result.error || !result.data || result.data.length === 0){
-        grid.innerHTML = '<div class="listing-card"><div class="listing-photo"><span>Wkrótce nowe oferty</span></div><div class="listing-body"><h3>&nbsp;</h3></div></div>';
+        grid.innerHTML = '<div class="listing-card"><div class="listing-photo"><span>Brak ofert spełniających kryteria</span></div><div class="listing-body"><h3>&nbsp;</h3></div></div>';
         return;
       }
       grid.innerHTML = result.data.map(carCardHtml).join('');
     }
     loadCars();
+
+    // ---------- Filtry: budżet co 50 000 zł od 100 000 do 2 000 000 ----------
+    (function populateBudgetOptions(){
+      var sel = document.getElementById('filterBudget');
+      if(!sel) return;
+      for(var v = 100000; v <= 2000000; v += 50000){
+        var opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = new Intl.NumberFormat('pl-PL').format(v) + ' zł';
+        sel.appendChild(opt);
+      }
+    })();
+
+    // ---------- Marka: lista pobrana z faktycznych ofert w bazie ----------
+    async function populateBrandOptions(){
+      var sel = document.getElementById('filterBrand');
+      if(!sel) return;
+      var result = await sb.from('cars').select('brand').eq('status', 'dostepny');
+      if(result.error || !result.data) return;
+      var brands = [...new Set(result.data.map(function(r){ return r.brand; }).filter(Boolean))].sort();
+      brands.forEach(function(b){
+        var opt = document.createElement('option');
+        opt.value = b;
+        opt.textContent = b;
+        sel.appendChild(opt);
+      });
+    }
+    populateBrandOptions();
+
+    // ---------- Obsługa przycisku "Szukaj" ----------
+    var searchPanelEl = document.getElementById('searchPanel');
+    if(searchPanelEl){
+      searchPanelEl.addEventListener('submit', function(e){
+        e.preventDefault();
+        var brand = document.getElementById('filterBrand').value;
+        var bodyType = document.getElementById('filterBodyType').value;
+        var budget = document.getElementById('filterBudget').value;
+        loadCars({ brand: brand, bodyType: bodyType, budget: budget });
+        var grid = document.getElementById('listingGrid');
+        if(grid) grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
 
     // ---------- Edytowalny tekst strony (tylko dla administratora) ----------
     async function applySiteContent(){
