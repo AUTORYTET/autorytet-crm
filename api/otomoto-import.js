@@ -95,6 +95,8 @@ export default async function handler(req, res) {
     const paramMap = {};
     collectKeyValuePairs(nextData, paramMap);
 
+    if (!result.brand) result.brand = pickParam(paramMap, ["marka pojazdu", "marka", "make", "brand"]);
+    if (!result.model) result.model = pickParam(paramMap, ["model pojazdu", "model"]);
     if (!result.year) result.year = pickParam(paramMap, ["rok produkcji", "rok-produkcji", "year", "production_year", "productionyear"]);
     if (!result.fuel) result.fuel = pickParam(paramMap, ["rodzaj paliwa", "fuel_type", "fuel", "paliwo"]);
     if (!result.gearbox) result.gearbox = pickParam(paramMap, ["skrzynia biegów", "skrzynia-biegow", "gearbox", "transmission"]);
