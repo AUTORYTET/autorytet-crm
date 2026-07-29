@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Phone, Mail, MapPin, Building2, Car, Wallet, CalendarClock, Plus,
   Search, CheckCircle2, Circle, X, LayoutGrid, Users, ListChecks,
-  Handshake, Bell, Trash2, ChevronRight, LogOut, Loader2, Settings, UserPlus, Edit2
+  Handshake, Bell, Trash2, ChevronRight, LogOut, Loader2, Settings, UserPlus, Edit2,
+  Tag, Pin, Send
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 
@@ -49,10 +50,35 @@ const TASK_TYPES = {
   note: { label: "Przypomnienie", icon: Bell },
 };
 
+const LEAD_SOURCES = ["Telefon", "Formularz WWW", "Polecenie", "Media społecznościowe", "Salon / wizyta", "Inne"];
+
+const STATUS_PROBABILITY = {
+  nowy: 10,
+  kontakt: 30,
+  negocjacje: 60,
+  sprzedane: 100,
+  utracony: 0,
+};
+
+function daysLeftInMonth() {
+  const now = new Date();
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return Math.max(0, Math.round((end - now) / 86400000) + 1);
+}
+
 function fmtDate(d) {
   if (!d) return "—";
   try {
     return new Date(d).toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric" });
+  } catch {
+    return d;
+  }
+}
+
+function fmtDateTime(d) {
+  if (!d) return "—";
+  try {
+    return new Date(d).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
   } catch {
     return d;
   }
@@ -84,14 +110,23 @@ function clientFromDb(row) {
     status: row.status,
     notes: row.notes,
     createdAt: row.created_at,
+    contactPerson: row.contact_person || "",
+    source: row.source || "",
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    pinnedNote: row.pinned_note || "",
+    statusChangedAt: row.status_changed_at || row.created_at,
   };
 }
-function clientToDb(c, ownerId) {
+function clientToDb(c, fallbackOwnerId) {
   return {
     name: c.name, phone: c.phone, email: c.email, address: c.address, nip: c.nip,
     car_model: c.carInterest, budget: c.budget ? Number(c.budget) : null,
     financing_type: c.financing, deadline: c.decisionDate || null,
-    status: c.status, notes: c.notes, owner_id: ownerId,
+    status: c.status, notes: c.notes, owner_id: c.ownerId || fallbackOwnerId,
+    contact_person: c.contactPerson || null,
+    source: c.source || null,
+    tags: Array.isArray(c.tags) && c.tags.length ? c.tags : null,
+    pinned_note: c.pinnedNote || null,
   };
 }
 function taskFromDb(row) {
@@ -104,6 +139,22 @@ function taskToDb(t, ownerId) {
   return {
     client_id: t.clientId, type: t.type, title: t.title,
     due_date: t.dueDate || null, done: !!t.done, owner_id: ownerId,
+  };
+}
+function activityFromDb(row) {
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    ownerId: row.owner_id,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    createdAt: row.created_at,
+  };
+}
+function activityToDb(a, ownerId) {
+  return {
+    client_id: a.clientId, type: a.type, title: a.title, body: a.body, owner_id: ownerId,
   };
 }
 
@@ -171,6 +222,9 @@ export default function CRM({ user, profile, onLogout }) {
   const [clients, setClients] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [staff, setStaff] = useState([]);
+  const [goals, setGoals] = useState({ contactsTarget: 10, dealsTarget: 5, valueTarget: 100000 });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("dashboard");
   const [selectedClientId, setSelectedClientId] = useState(null);
@@ -186,10 +240,20 @@ export default function CRM({ user, profile, onLogout }) {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: clientRows, error: e1 }, { data: taskRows, error: e2 }, { data: vehicleRows, error: e3 }] = await Promise.all([
+      const [
+        { data: clientRows, error: e1 },
+        { data: taskRows, error: e2 },
+        { data: vehicleRows, error: e3 },
+        activityRes,
+        staffRes,
+        goalsRes,
+      ] = await Promise.all([
         supabase.from("clients").select("*").order("created_at", { ascending: false }),
         supabase.from("tasks").select("*").order("due_date", { ascending: true }),
         supabase.from("cars").select("*").order("created_at", { ascending: false }),
+        supabase.from("client_activities").select("*").order("created_at", { ascending: false }),
+        supabase.from("profiles").select("*"),
+        supabase.from("goals").select("*").eq("id", 1).maybeSingle(),
       ]);
       if (e1) throw e1;
       if (e2) throw e2;
@@ -197,6 +261,17 @@ export default function CRM({ user, profile, onLogout }) {
       setClients((clientRows || []).map(clientFromDb));
       setTasks((taskRows || []).map(taskFromDb));
       setVehicles((vehicleRows || []).map(vehicleFromDb));
+      // client_activities / profiles / goals to nowe tabele — jeśli migration.sql
+      // nie został jeszcze uruchomiony, ich błąd jest ignorowany i nie blokuje reszty CRM.
+      setActivities(activityRes.error ? [] : (activityRes.data || []).map(activityFromDb));
+      setStaff(staffRes.error ? [] : (staffRes.data || []));
+      if (!goalsRes.error && goalsRes.data) {
+        setGoals({
+          contactsTarget: goalsRes.data.contacts_target,
+          dealsTarget: goalsRes.data.deals_target,
+          valueTarget: goalsRes.data.value_target,
+        });
+      }
     } catch (e) {
       setError("Nie udało się wczytać danych: " + (e.message || ""));
     } finally {
@@ -297,6 +372,42 @@ export default function CRM({ user, profile, onLogout }) {
     }
   }, [vehicles]);
 
+  const addActivity = useCallback(async (activity) => {
+    try {
+      const { data, error } = await supabase.from("client_activities").insert(activityToDb(activity, user.id)).select().single();
+      if (error) throw error;
+      setActivities((prev) => [activityFromDb(data), ...prev]);
+    } catch (e) {
+      setError("Nie udało się zapisać wpisu historii kontaktu: " + (e.message || ""));
+    }
+  }, [user.id]);
+
+  const removeActivity = useCallback(async (id) => {
+    const prevActivities = activities;
+    setActivities((prev) => prev.filter((a) => a.id !== id));
+    try {
+      const { error } = await supabase.from("client_activities").delete().eq("id", id);
+      if (error) throw error;
+    } catch (e) {
+      setActivities(prevActivities);
+      setError("Nie udało się usunąć wpisu: " + (e.message || ""));
+    }
+  }, [activities]);
+
+  const updateGoals = useCallback(async (nextGoals) => {
+    try {
+      const { error } = await supabase.from("goals").update({
+        contacts_target: nextGoals.contactsTarget,
+        deals_target: nextGoals.dealsTarget,
+        value_target: nextGoals.valueTarget,
+      }).eq("id", 1);
+      if (error) throw error;
+      setGoals(nextGoals);
+    } catch (e) {
+      setError("Nie udało się zapisać celów: " + (e.message || ""));
+    }
+  }, []);
+
   const filteredVehicles = useMemo(() => {
     return vehicles.filter((v) => vehicleStatusFilter === "all" || v.status === vehicleStatusFilter);
   }, [vehicles, vehicleStatusFilter]);
@@ -306,6 +417,12 @@ export default function CRM({ user, profile, onLogout }) {
     clients.forEach((c) => { map[c.id] = c.name; });
     return map;
   }, [clients]);
+
+  const staffNameById = useMemo(() => {
+    const map = {};
+    staff.forEach((p) => { map[p.id] = p.full_name || p.email || "—"; });
+    return map;
+  }, [staff]);
 
   const filteredClients = useMemo(() => {
     return clients.filter((c) => {
@@ -394,6 +511,7 @@ export default function CRM({ user, profile, onLogout }) {
             <Dashboard
               clients={clients}
               tasks={upcomingTasks}
+              goals={goals}
               onOpenClient={(id) => { setSelectedClientId(id); setTab("clients"); }}
             />
           )}
@@ -414,12 +532,17 @@ export default function CRM({ user, profile, onLogout }) {
             <ClientDetail
               client={selectedClient}
               tasks={tasks.filter((t) => t.clientId === selectedClient.id)}
+              activities={activities.filter((a) => a.clientId === selectedClient.id)}
+              staffName={staffNameById[selectedClient.ownerId] || "—"}
               onBack={() => setSelectedClientId(null)}
               onEdit={() => { setEditingClient(selectedClient); setShowClientForm(true); }}
               onDelete={() => removeClient(selectedClient.id)}
               onAddTask={(task) => upsertTask(task)}
               onToggleTask={(task) => upsertTask({ ...task, done: !task.done })}
               onDeleteTask={(id) => removeTask(id)}
+              onAddActivity={(activity) => addActivity(activity)}
+              onDeleteActivity={(id) => removeActivity(id)}
+              onUpdateClient={(patch) => upsertClient({ ...selectedClient, ...patch })}
             />
           )}
 
@@ -444,13 +567,16 @@ export default function CRM({ user, profile, onLogout }) {
           )}
 
           {tab === "settings" && profile.role === "admin" && (
-            <SettingsPanel user={user} />
+            <SettingsPanel user={user} goals={goals} onUpdateGoals={updateGoals} />
           )}
         </main>
 
         {showClientForm && (
           <ClientFormModal
             initial={editingClient}
+            staff={staff}
+            canReassign={profile.role === "admin"}
+            currentUserId={user.id}
             onClose={() => setShowClientForm(false)}
             onSave={async (client) => {
               const saved = await upsertClient(client);
@@ -488,14 +614,76 @@ function NavBtn({ active, onClick, icon: Icon, label }) {
 }
 
 /* ---------- Dashboard ---------- */
-function Dashboard({ clients, tasks, onOpenClient }) {
+function Dashboard({ clients, tasks, goals, onOpenClient }) {
   const urgent = tasks.filter((t) => t.days !== null && t.days <= 2);
   const totalBudget = clients.reduce((sum, c) => sum + (Number(c.budget) || 0), 0);
   const funnel = STATUSES.map((s) => ({ ...s, count: clients.filter((c) => c.status === s.key).length }));
   const maxCount = Math.max(1, ...funnel.map((f) => f.count));
 
+  const now = new Date();
+  const isThisMonth = (d) => {
+    if (!d) return false;
+    const dt = new Date(d);
+    return dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth();
+  };
+  const addedThisMonth = clients.filter((c) => isThisMonth(c.createdAt)).length;
+  const dealsThisMonth = clients.filter((c) => isThisMonth(c.createdAt) && c.status !== "utracony").length;
+  const openValue = clients
+    .filter((c) => c.status !== "sprzedane" && c.status !== "utracony")
+    .reduce((s, c) => s + (Number(c.budget) || 0), 0);
+  const wonThisMonth = clients.filter((c) => c.status === "sprzedane" && isThisMonth(c.statusChangedAt)).length;
+  const lostThisMonth = clients.filter((c) => c.status === "utracony" && isThisMonth(c.statusChangedAt)).length;
+  const daysLeft = daysLeftInMonth();
+  const goalRows = [
+    { label: "Nowi klienci", value: addedThisMonth, target: goals.contactsTarget },
+    { label: "Nowe szanse sprzedaży", value: dealsThisMonth, target: goals.dealsTarget },
+    { label: "Wartość otwartych szans", value: openValue, target: goals.valueTarget, isCurrency: true },
+  ];
+
   return (
     <div style={S.stack}>
+      <section style={S.card}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10 }}>
+          <h3 style={S.cardTitle}>Twoje statystyki</h3>
+          <span style={{ fontSize: 11.5, color: "#9A9A9A", fontWeight: 600 }}>
+            Zostało {daysLeft} {daysLeft === 1 ? "dzień" : "dni"} do końca miesiąca
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginTop: 16 }}>
+          <div style={{ flex: 1.4, minWidth: 260 }}>
+            <div style={{ ...S.label, marginBottom: 10 }}>Cele miesięczne</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {goalRows.map((g) => {
+                const pct = g.target > 0 ? Math.min(100, Math.round((g.value / g.target) * 100)) : 0;
+                return (
+                  <div key={g.label}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600 }}>{g.label}</span>
+                      <span style={{ color: "#9A9A9A" }}>
+                        {g.isCurrency
+                          ? `${g.value.toLocaleString("pl-PL")} / ${g.target.toLocaleString("pl-PL")} zł`
+                          : `${g.value} z ${g.target}`}
+                      </span>
+                    </div>
+                    <div style={{ background: "#F0EFEC", borderRadius: 6, height: 8, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, background: pct >= 100 ? "#1C8A4B" : "#111111", height: "100%", borderRadius: 6 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ ...S.label, marginBottom: 10 }}>Podsumowanie tego miesiąca</div>
+            <div style={{ display: "flex", gap: 20 }}>
+              <SummaryFigure value={addedThisMonth} label="Dodane" color="#111111" />
+              <SummaryFigure value={wonThisMonth} label="Wygrane" color="#1C8A4B" />
+              <SummaryFigure value={lostThisMonth} label="Przegrane" color="#E4241B" />
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div style={S.statRow}>
         <StatCard label="Klienci" value={clients.length} />
         <StatCard label="Aktywne zadania" value={tasks.length} />
@@ -536,6 +724,15 @@ function Dashboard({ clients, tasks, onOpenClient }) {
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+function SummaryFigure({ value, label, color }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, fontWeight: 600, color }}>{value}</div>
+      <div style={{ fontSize: 11, color: "#9A9A9A", textTransform: "uppercase", fontWeight: 700, marginTop: 2 }}>{label}</div>
     </div>
   );
 }
@@ -598,6 +795,13 @@ function ClientsList({ clients, search, setSearch, statusFilter, setStatusFilter
                 <span style={{ flex: 2, textAlign: "left" }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5 }}>{c.name}</div>
                   <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{c.phone}</div>
+                  {c.tags && c.tags.length > 0 && (
+                    <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+                      {c.tags.slice(0, 3).map((t) => (
+                        <span key={t} style={{ fontSize: 10, fontWeight: 700, background: "#F0EFEC", borderRadius: 10, padding: "2px 7px" }}>{t}</span>
+                      ))}
+                    </div>
+                  )}
                 </span>
                 <span style={{ flex: 1.4, fontSize: 13, textAlign: "left" }}>{c.carInterest || "—"}</span>
                 <span style={{ flex: 1, fontSize: 13, textAlign: "left" }}>{c.budget ? `${Number(c.budget).toLocaleString("pl-PL")} zł` : "—"}</span>
@@ -615,12 +819,17 @@ function ClientsList({ clients, search, setSearch, statusFilter, setStatusFilter
 }
 
 /* ---------- Client detail ---------- */
-function ClientDetail({ client, tasks, onBack, onEdit, onDelete, onAddTask, onToggleTask, onDeleteTask }) {
+function ClientDetail({ client, tasks, activities, staffName, onBack, onEdit, onDelete, onAddTask, onToggleTask, onDeleteTask, onAddActivity, onDeleteActivity, onUpdateClient }) {
   const [newTaskType, setNewTaskType] = useState("call");
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDate, setNewTaskDate] = useState("");
 
+  const [newActivityType, setNewActivityType] = useState("note");
+  const [newActivityTitle, setNewActivityTitle] = useState("");
+  const [newActivityBody, setNewActivityBody] = useState("");
+
   const sortedTasks = [...tasks].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+  const sortedActivities = [...(activities || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   function submitTask(e) {
     e.preventDefault();
@@ -636,16 +845,45 @@ function ClientDetail({ client, tasks, onBack, onEdit, onDelete, onAddTask, onTo
     setNewTaskDate("");
   }
 
+  function submitActivity(e) {
+    e.preventDefault();
+    if (!newActivityTitle.trim()) return;
+    onAddActivity({
+      clientId: client.id,
+      type: newActivityType,
+      title: newActivityTitle.trim(),
+      body: newActivityBody.trim(),
+    });
+    setNewActivityTitle("");
+    setNewActivityBody("");
+  }
+
+  const probability = STATUS_PROBABILITY[client.status] ?? 0;
+  const checklist = [
+    { label: "Dane kontaktowe uzupełnione", done: !!(client.phone && client.email) },
+    { label: "NIP uzupełniony", done: !!client.nip },
+    { label: "Osoba kontaktowa uzupełniona", done: !!client.contactPerson },
+    { label: "Źródło pozyskania uzupełnione", done: !!client.source },
+    { label: "Budżet uzupełniony", done: !!client.budget },
+    { label: "Forma finansowania określona", done: !!client.financing },
+  ];
+  const completePct = Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100);
+
   return (
     <div style={S.stack}>
       <button onClick={onBack} style={S.backBtn}>← Wszyscy klienci</button>
 
       <div style={S.twoCol}>
         <section style={{ ...S.card, flex: 1.3 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <PinnedNoteBox note={client.pinnedNote} onSave={(v) => onUpdateClient({ pinnedNote: v })} />
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 14 }}>
             <div>
               <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, fontWeight: 600 }}>{client.name}</div>
-              <div style={{ marginTop: 6 }}><StatusPill statusKey={client.status} /></div>
+              <div style={{ marginTop: 6, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <StatusPill statusKey={client.status} />
+                <span style={{ fontSize: 11.5, color: "#9A9A9A" }}>Opiekun: <strong style={{ color: "#111111" }}>{staffName}</strong></span>
+              </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={onEdit} style={S.secondaryBtn}>Edytuj</button>
@@ -653,11 +891,17 @@ function ClientDetail({ client, tasks, onBack, onEdit, onDelete, onAddTask, onTo
             </div>
           </div>
 
+          <div style={{ marginTop: 14 }}>
+            <TagsEditor tags={client.tags || []} onChange={(tags) => onUpdateClient({ tags })} />
+          </div>
+
           <div style={S.detailGrid}>
             <DetailRow icon={Phone} label="Telefon" value={client.phone} />
             <DetailRow icon={Mail} label="E-mail" value={client.email} />
             <DetailRow icon={MapPin} label="Adres" value={client.address} />
             <DetailRow icon={Building2} label="NIP" value={client.nip} />
+            <DetailRow icon={UserPlus} label="Osoba kontaktowa" value={client.contactPerson} />
+            <DetailRow icon={Tag} label="Źródło pozyskania" value={client.source} />
             <DetailRow icon={Car} label="Model / auto" value={client.carInterest} />
             <DetailRow icon={Wallet} label="Budżet" value={client.budget ? `${Number(client.budget).toLocaleString("pl-PL")} zł` : "—"} />
             <DetailRow icon={Handshake} label="Finansowanie" value={client.financing} />
@@ -707,6 +951,81 @@ function ClientDetail({ client, tasks, onBack, onEdit, onDelete, onAddTask, onTo
                 </div>
               );
             })}
+          </div>
+        </section>
+      </div>
+
+      <div style={S.twoCol}>
+        <section style={{ ...S.card, flex: 1.3 }}>
+          <h3 style={S.cardTitle}>Historia kontaktu</h3>
+          <form onSubmit={submitActivity} style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <select value={newActivityType} onChange={(e) => setNewActivityType(e.target.value)} style={{ ...S.select, minWidth: 150 }}>
+                {Object.entries(TASK_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+              <input
+                value={newActivityTitle}
+                onChange={(e) => setNewActivityTitle(e.target.value)}
+                placeholder="np. Rozmowa o ofercie finansowania"
+                style={{ ...S.input, flex: 1, minWidth: 180 }}
+              />
+            </div>
+            <textarea
+              value={newActivityBody}
+              onChange={(e) => setNewActivityBody(e.target.value)}
+              placeholder="Szczegóły rozmowy / treść notatki (opcjonalnie)"
+              rows={2}
+              style={{ ...S.input, resize: "vertical" }}
+            />
+            <button type="submit" style={{ ...S.primaryBtn, alignSelf: "flex-start" }}><Send size={13} /> Dodaj wpis</button>
+          </form>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
+            {sortedActivities.length === 0 && <EmptyNote text="Brak historii kontaktu z tym klientem." />}
+            {sortedActivities.map((a) => {
+              const Icon = TASK_TYPES[a.type]?.icon || Bell;
+              return (
+                <div key={a.id} style={{ border: "1px solid #F0EFEC", borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                    <Icon size={14} color="#6B6B6B" style={{ marginTop: 2 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>{a.title}</div>
+                      {a.body && <div style={{ fontSize: 12.5, color: "#4a4a4a", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{a.body}</div>}
+                      <div style={{ fontSize: 11, color: "#9A9A9A", marginTop: 6 }}>{fmtDateTime(a.createdAt)}</div>
+                    </div>
+                    <button onClick={() => onDeleteActivity(a.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section style={{ ...S.card, flex: 1 }}>
+          <h3 style={S.cardTitle}>Postęp sprzedaży</h3>
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B6B6B", fontWeight: 600, marginBottom: 6 }}>
+              <span>Prawdopodobieństwo sprzedaży</span>
+              <span style={{ color: "#111111", fontWeight: 700 }}>{probability}%</span>
+            </div>
+            <div style={{ background: "#F0EFEC", borderRadius: 6, height: 8, overflow: "hidden" }}>
+              <div style={{ width: `${probability}%`, background: "#E4241B", height: "100%", borderRadius: 6 }} />
+            </div>
+          </div>
+
+          <div style={{ marginTop: 22 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B6B6B", fontWeight: 600, marginBottom: 8 }}>
+              <span>Kompletowanie danych</span>
+              <span style={{ color: "#111111", fontWeight: 700 }}>{completePct}%</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {checklist.map((c) => (
+                <div key={c.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
+                  {c.done ? <CheckCircle2 size={15} color="#1C8A4B" /> : <Circle size={15} color="#B7B5B1" />}
+                  <span style={{ color: c.done ? "#111111" : "#9A9A9A" }}>{c.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       </div>
@@ -778,11 +1097,12 @@ function TasksBoard({ tasks, doneTasks, onToggleTask, onOpenClient }) {
 }
 
 /* ---------- Client form modal (with NIP lookup) ---------- */
-function ClientFormModal({ initial, onClose, onSave }) {
+function ClientFormModal({ initial, staff = [], canReassign = false, currentUserId, onClose, onSave }) {
   const [form, setForm] = useState(() => initial || {
     id: null, name: "", phone: "", email: "", address: "", nip: "",
     carInterest: "", budget: "", financing: FINANCING[0], decisionDate: "",
     status: "nowy", notes: "",
+    contactPerson: "", source: "", tags: [], pinnedNote: "", ownerId: currentUserId,
   });
   const [saving, setSaving] = useState(false);
   const [nipLoading, setNipLoading] = useState(false);
@@ -844,6 +1164,14 @@ function ClientFormModal({ initial, onClose, onSave }) {
             </div>
             {nipError && <div style={{ fontSize: 11, color: "#E4241B", marginTop: 4 }}>{nipError}</div>}
           </div>
+          <Field label="Osoba kontaktowa" value={form.contactPerson} onChange={(v) => set("contactPerson", v)} />
+          <div>
+            <label style={S.label}>Źródło pozyskania</label>
+            <select value={form.source} onChange={(e) => set("source", e.target.value)} style={S.input}>
+              <option value="">— wybierz —</option>
+              {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
           <Field label="Model / auto" value={form.carInterest} onChange={(v) => set("carInterest", v)} />
           <Field label="Budżet (PLN)" value={form.budget} onChange={(v) => set("budget", v)} type="number" />
           <div>
@@ -859,6 +1187,28 @@ function ClientFormModal({ initial, onClose, onSave }) {
               {STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
             </select>
           </div>
+          {canReassign && staff.length > 0 && (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={S.label}>Opiekun</label>
+              <select value={form.ownerId || ""} onChange={(e) => set("ownerId", e.target.value)} style={S.input}>
+                {staff.map((p) => <option key={p.id} value={p.id}>{p.full_name || p.email || p.id}</option>)}
+              </select>
+            </div>
+          )}
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={S.label}>Tagi / grupy</label>
+            <TagsEditor tags={form.tags || []} onChange={(tags) => set("tags", tags)} />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={S.label}>Istotna informacja (przypięta)</label>
+            <textarea
+              value={form.pinnedNote}
+              onChange={(e) => set("pinnedNote", e.target.value)}
+              rows={2}
+              style={{ ...S.input, resize: "vertical" }}
+              placeholder="Np. Klient wymaga kontaktu tylko po 17:00"
+            />
+          </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={S.label}>Notatki</label>
             <textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={3} style={{ ...S.input, resize: "vertical" }} />
@@ -868,6 +1218,84 @@ function ClientFormModal({ initial, onClose, onSave }) {
             <button type="submit" disabled={saving} style={S.primaryBtn}>{saving ? "Zapisywanie…" : "Zapisz klienta"}</button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function TagsEditor({ tags = [], onChange }) {
+  const [draft, setDraft] = useState("");
+  function addTag() {
+    const clean = draft.trim();
+    if (!clean || tags.includes(clean)) { setDraft(""); return; }
+    onChange([...tags, clean]);
+    setDraft("");
+  }
+  function removeTag(t) {
+    onChange(tags.filter((x) => x !== t));
+  }
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: tags.length ? 8 : 0 }}>
+        {tags.map((t) => (
+          <span key={t} style={{
+            display: "inline-flex", alignItems: "center", gap: 4, background: "#F0EFEC",
+            borderRadius: 20, padding: "4px 10px", fontSize: 11.5, fontWeight: 600,
+          }}>
+            {t}
+            <button type="button" onClick={() => removeTag(t)} style={{ background: "none", border: "none", display: "flex", padding: 0 }}>
+              <X size={11} color="#9A9A9A" />
+            </button>
+          </span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
+          placeholder="np. VIP, Leasing, Powracający…"
+          style={{ ...S.input, flex: 1 }}
+        />
+        <button type="button" onClick={addTag} style={S.secondaryBtn}>Dodaj</button>
+      </div>
+    </div>
+  );
+}
+
+function PinnedNoteBox({ note, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(note || "");
+  useEffect(() => { setDraft(note || ""); }, [note]);
+
+  if (!editing && !note) {
+    return (
+      <button onClick={() => setEditing(true)} style={{ ...S.secondaryBtn, display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <Pin size={13} /> Dodaj istotną informację
+      </button>
+    );
+  }
+  if (!editing) {
+    return (
+      <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <Pin size={14} color="#8a6d00" style={{ marginTop: 2 }} />
+        <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}>{note}</div>
+        <button onClick={() => setEditing(true)} style={{ background: "none", border: "none" }}><Edit2 size={13} color="#8a6d00" /></button>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={2}
+        style={{ ...S.input, resize: "vertical" }}
+        placeholder="Np. Klient wymaga kontaktu tylko po 17:00"
+      />
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button onClick={() => { setEditing(false); setDraft(note || ""); }} style={S.secondaryBtn}>Anuluj</button>
+        <button onClick={() => { onSave(draft.trim()); setEditing(false); }} style={S.primaryBtn}>Zapisz</button>
       </div>
     </div>
   );
@@ -1093,13 +1521,17 @@ function VehicleFormModal({ initial, onClose, onSave }) {
 }
 
 /* ---------- Settings (Ustawienia) - admin only ---------- */
-function SettingsPanel({ user }) {
+function SettingsPanel({ user, goals, onUpdateGoals }) {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
   const [inviteRole, setInviteRole] = useState("doradca");
   const [msg, setMsg] = useState(null);
+  const [goalsForm, setGoalsForm] = useState(goals);
+  const [savingGoals, setSavingGoals] = useState(false);
+
+  useEffect(() => { setGoalsForm(goals); }, [goals]);
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -1115,8 +1547,43 @@ function SettingsPanel({ user }) {
     setStaff((prev) => prev.map((p) => (p.id === id ? { ...p, role } : p)));
   };
 
+  async function saveGoals(e) {
+    e.preventDefault();
+    setSavingGoals(true);
+    await onUpdateGoals({
+      contactsTarget: Number(goalsForm.contactsTarget) || 0,
+      dealsTarget: Number(goalsForm.dealsTarget) || 0,
+      valueTarget: Number(goalsForm.valueTarget) || 0,
+    });
+    setSavingGoals(false);
+  }
+
   return (
     <div style={S.stack}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Cele miesięczne</div>
+        <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
+          Progi widoczne na pulpicie w sekcji „Twoje statystyki". Wymaga uruchomienia migracji SQL (tabela goals).
+        </div>
+        <form onSubmit={saveGoals} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, alignItems: "end" }}>
+          <div>
+            <label style={S.label}>Nowi klienci (cel)</label>
+            <input type="number" value={goalsForm.contactsTarget} onChange={(e) => setGoalsForm((f) => ({ ...f, contactsTarget: e.target.value }))} style={S.input} />
+          </div>
+          <div>
+            <label style={S.label}>Nowe szanse sprzedaży (cel)</label>
+            <input type="number" value={goalsForm.dealsTarget} onChange={(e) => setGoalsForm((f) => ({ ...f, dealsTarget: e.target.value }))} style={S.input} />
+          </div>
+          <div>
+            <label style={S.label}>Wartość szans sprzedaży (cel, PLN)</label>
+            <input type="number" value={goalsForm.valueTarget} onChange={(e) => setGoalsForm((f) => ({ ...f, valueTarget: e.target.value }))} style={S.input} />
+          </div>
+          <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
+            <button type="submit" disabled={savingGoals} style={S.primaryBtn}>{savingGoals ? "Zapisywanie…" : "Zapisz cele"}</button>
+          </div>
+        </form>
+      </div>
+
       <div style={S.card}>
         <div style={S.cardTitle}>Zespół i uprawnienia</div>
         <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
