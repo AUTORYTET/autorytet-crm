@@ -298,6 +298,7 @@ function companyFromDb(row) {
     notes: row.notes,
     createdAt: row.created_at,
     contactPerson: row.contact_person || "",
+    contactPosition: row.contact_position || "",
     source: row.source || "",
     tags: Array.isArray(row.tags) ? row.tags : [],
     pinnedNote: row.pinned_note || "",
@@ -308,6 +309,7 @@ function companyToDb(c, fallbackOwnerId) {
     name: c.name, phone: c.phone, email: c.email, address: c.address, nip: c.nip,
     notes: c.notes, owner_id: c.ownerId || fallbackOwnerId,
     contact_person: c.contactPerson || null,
+    contact_position: c.contactPosition || null,
     source: c.source || null,
     tags: Array.isArray(c.tags) && c.tags.length ? c.tags : null,
     pinned_note: c.pinnedNote || null,
@@ -483,6 +485,38 @@ function importHistoryFromDb(row) {
   };
 }
 
+/* ---------- Ustawienia CRM (poziom organizacji / admina) ---------- */
+const DEFAULT_ORG_CONFIG = {
+  defaultDealVisibility: "Publiczna",
+  showProbability: true,
+  enableProducts: true,
+  enableCosts: true,
+  advisorsCanEditOthers: true,
+};
+
+function orgSettingsFromDb(row) {
+  return { ...DEFAULT_ORG_CONFIG, ...(row && row.config ? row.config : {}) };
+}
+
+function contactPositionFromDb(row) {
+  return { id: row.id, name: row.name, sortOrder: row.sort_order, createdAt: row.created_at };
+}
+
+function reasonCatalogFromDb(row) {
+  return { id: row.id, type: row.type, label: row.label, sortOrder: row.sort_order, createdAt: row.created_at };
+}
+
+function productCatalogFromDb(row) {
+  return {
+    id: row.id, name: row.name, sku: row.sku || "",
+    defaultPrice: row.default_price, defaultCost: row.default_cost, createdAt: row.created_at,
+  };
+}
+
+function costCatalogFromDb(row) {
+  return { id: row.id, name: row.name, defaultAmount: row.default_amount, createdAt: row.created_at };
+}
+
 function vehicleFromDb(row) {
   return {
     id: row.id,
@@ -587,6 +621,11 @@ export default function CRM({ user, profile, onLogout }) {
   const [regionalSettings, setRegionalSettings] = useState(DEFAULT_REGIONAL);
   const [notificationSettings, setNotificationSettings] = useState(DEFAULT_NOTIFICATIONS);
   const [formatTick, setFormatTick] = useState(0);
+  const [orgSettings, setOrgSettings] = useState(DEFAULT_ORG_CONFIG);
+  const [contactPositions, setContactPositions] = useState([]);
+  const [reasonCatalog, setReasonCatalog] = useState([]);
+  const [productCatalog, setProductCatalog] = useState([]);
+  const [costCatalog, setCostCatalog] = useState([]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -601,6 +640,7 @@ export default function CRM({ user, profile, onLogout }) {
       const [
         dealsRes, taskRes, vehicleRes, activityRes, staffRes, goalsRes, productsRes, costsRes, relationsRes,
         userSettingsRes, templatesRes, templateItemsRes, importHistoryRes,
+        orgSettingsRes, contactPositionsRes, reasonCatalogRes, productCatalogRes, costCatalogRes,
       ] = await Promise.all([
         supabase.from("deals").select("*").order("created_at", { ascending: false }),
         supabase.from("tasks").select("*").order("due_date", { ascending: true }),
@@ -615,6 +655,11 @@ export default function CRM({ user, profile, onLogout }) {
         supabase.from("task_templates").select("*").order("created_at", { ascending: false }),
         supabase.from("task_template_items").select("*").order("sort_order", { ascending: true }),
         supabase.from("import_history").select("*").order("created_at", { ascending: false }),
+        supabase.from("org_settings").select("*").eq("id", 1).maybeSingle(),
+        supabase.from("contact_positions").select("*").order("sort_order", { ascending: true }),
+        supabase.from("deal_reason_catalog").select("*").order("sort_order", { ascending: true }),
+        supabase.from("product_catalog").select("*").order("created_at", { ascending: false }),
+        supabase.from("cost_catalog").select("*").order("created_at", { ascending: false }),
       ]);
       if (taskRes.error) throw taskRes.error;
       if (vehicleRes.error) throw vehicleRes.error;
@@ -631,6 +676,11 @@ export default function CRM({ user, profile, onLogout }) {
       setTaskTemplates(templatesRes.error ? [] : (templatesRes.data || []).map(taskTemplateFromDb));
       setTemplateItems(templateItemsRes.error ? [] : (templateItemsRes.data || []).map(templateItemFromDb));
       setImportHistory(importHistoryRes.error ? [] : (importHistoryRes.data || []).map(importHistoryFromDb));
+      setOrgSettings(orgSettingsFromDb(orgSettingsRes.error ? null : orgSettingsRes.data));
+      setContactPositions(contactPositionsRes.error ? [] : (contactPositionsRes.data || []).map(contactPositionFromDb));
+      setReasonCatalog(reasonCatalogRes.error ? [] : (reasonCatalogRes.data || []).map(reasonCatalogFromDb));
+      setProductCatalog(productCatalogRes.error ? [] : (productCatalogRes.data || []).map(productCatalogFromDb));
+      setCostCatalog(costCatalogRes.error ? [] : (costCatalogRes.data || []).map(costCatalogFromDb));
       if (!goalsRes.error && goalsRes.data) {
         setGoals({
           contactsTarget: goalsRes.data.contacts_target,
@@ -949,6 +999,143 @@ export default function CRM({ user, profile, onLogout }) {
     await reload();
   }, [templateItems, user.id, reload]);
 
+  /* ---------- Ustawienia CRM (poziom organizacji / admina) ---------- */
+  const updateOrgSettings = useCallback(async (patch) => {
+    const next = { ...orgSettings, ...patch };
+    try {
+      const { error } = await supabase.from("org_settings").upsert({
+        id: 1, config: next, updated_at: new Date().toISOString(),
+      });
+      if (error) throw error;
+      setOrgSettings(next);
+      return true;
+    } catch (e) {
+      setError("Nie udało się zapisać ustawień CRM: " + (e.message || ""));
+      return false;
+    }
+  }, [orgSettings]);
+
+  const saveContactPosition = useCallback(async (draft) => {
+    try {
+      if (draft.id) {
+        const { error } = await supabase.from("contact_positions").update({ name: draft.name }).eq("id", draft.id);
+        if (error) throw error;
+        setContactPositions((prev) => prev.map((p) => (p.id === draft.id ? { ...p, name: draft.name } : p)));
+      } else {
+        const { data, error } = await supabase.from("contact_positions")
+          .insert({ name: draft.name, sort_order: contactPositions.length }).select().single();
+        if (error) throw error;
+        setContactPositions((prev) => [...prev, contactPositionFromDb(data)]);
+      }
+      return true;
+    } catch (e) {
+      setError("Nie udało się zapisać stanowiska: " + (e.message || ""));
+      return false;
+    }
+  }, [contactPositions]);
+
+  const removeContactPosition = useCallback(async (id) => {
+    try {
+      const { error } = await supabase.from("contact_positions").delete().eq("id", id);
+      if (error) throw error;
+      setContactPositions((prev) => prev.filter((p) => p.id !== id));
+    } catch (e) {
+      setError("Nie udało się usunąć stanowiska: " + (e.message || ""));
+    }
+  }, []);
+
+  const saveReasonCatalogItem = useCallback(async (draft) => {
+    try {
+      if (draft.id) {
+        const { error } = await supabase.from("deal_reason_catalog").update({ label: draft.label }).eq("id", draft.id);
+        if (error) throw error;
+        setReasonCatalog((prev) => prev.map((r) => (r.id === draft.id ? { ...r, label: draft.label } : r)));
+      } else {
+        const sameType = reasonCatalog.filter((r) => r.type === draft.type);
+        const { data, error } = await supabase.from("deal_reason_catalog")
+          .insert({ type: draft.type, label: draft.label, sort_order: sameType.length }).select().single();
+        if (error) throw error;
+        setReasonCatalog((prev) => [...prev, reasonCatalogFromDb(data)]);
+      }
+      return true;
+    } catch (e) {
+      setError("Nie udało się zapisać powodu: " + (e.message || ""));
+      return false;
+    }
+  }, [reasonCatalog]);
+
+  const removeReasonCatalogItem = useCallback(async (id) => {
+    try {
+      const { error } = await supabase.from("deal_reason_catalog").delete().eq("id", id);
+      if (error) throw error;
+      setReasonCatalog((prev) => prev.filter((r) => r.id !== id));
+    } catch (e) {
+      setError("Nie udało się usunąć powodu: " + (e.message || ""));
+    }
+  }, []);
+
+  const saveProductCatalogItem = useCallback(async (draft) => {
+    try {
+      const payload = {
+        name: draft.name, sku: draft.sku || null,
+        default_price: draft.defaultPrice ? Number(draft.defaultPrice) : 0,
+        default_cost: draft.defaultCost ? Number(draft.defaultCost) : 0,
+      };
+      if (draft.id) {
+        const { error } = await supabase.from("product_catalog").update(payload).eq("id", draft.id);
+        if (error) throw error;
+        setProductCatalog((prev) => prev.map((p) => (p.id === draft.id ? productCatalogFromDb({ id: draft.id, created_at: p.createdAt, ...payload }) : p)));
+      } else {
+        const { data, error } = await supabase.from("product_catalog").insert(payload).select().single();
+        if (error) throw error;
+        setProductCatalog((prev) => [productCatalogFromDb(data), ...prev]);
+      }
+      return true;
+    } catch (e) {
+      setError("Nie udało się zapisać produktu w katalogu: " + (e.message || ""));
+      return false;
+    }
+  }, []);
+
+  const removeProductCatalogItem = useCallback(async (id) => {
+    try {
+      const { error } = await supabase.from("product_catalog").delete().eq("id", id);
+      if (error) throw error;
+      setProductCatalog((prev) => prev.filter((p) => p.id !== id));
+    } catch (e) {
+      setError("Nie udało się usunąć produktu z katalogu: " + (e.message || ""));
+    }
+  }, []);
+
+  const saveCostCatalogItem = useCallback(async (draft) => {
+    try {
+      const payload = { name: draft.name, default_amount: draft.defaultAmount ? Number(draft.defaultAmount) : 0 };
+      if (draft.id) {
+        const { error } = await supabase.from("cost_catalog").update(payload).eq("id", draft.id);
+        if (error) throw error;
+        setCostCatalog((prev) => prev.map((c) => (c.id === draft.id ? { ...c, name: payload.name, defaultAmount: payload.default_amount } : c)));
+      } else {
+        const { data, error } = await supabase.from("cost_catalog").insert(payload).select().single();
+        if (error) throw error;
+        setCostCatalog((prev) => [costCatalogFromDb(data), ...prev]);
+      }
+      return true;
+    } catch (e) {
+      setError("Nie udało się zapisać kosztu w katalogu: " + (e.message || ""));
+      return false;
+    }
+  }, []);
+
+  const removeCostCatalogItem = useCallback(async (id) => {
+    try {
+      const { error } = await supabase.from("cost_catalog").delete().eq("id", id);
+      if (error) throw error;
+      setCostCatalog((prev) => prev.filter((c) => c.id !== id));
+    } catch (e) {
+      setError("Nie udało się usunąć kosztu z katalogu: " + (e.message || ""));
+    }
+  }, []);
+
   const filteredVehicles = useMemo(() => {
     return vehicles.filter((v) => vehicleStatusFilter === "all" || v.status === vehicleStatusFilter);
   }, [vehicles, vehicleStatusFilter]);
@@ -1161,6 +1348,10 @@ export default function CRM({ user, profile, onLogout }) {
               onDeleteCost={(id) => removeCost(id)}
               taskTemplates={taskTemplates}
               onApplyTemplate={(templateId) => applyTemplateToDeal(templateId, selectedDeal)}
+              productCatalog={productCatalog}
+              costCatalog={costCatalog}
+              reasonCatalog={reasonCatalog}
+              orgSettings={orgSettings}
             />
           )}
 
@@ -1218,6 +1409,10 @@ export default function CRM({ user, profile, onLogout }) {
               showCompanyLink
               taskTemplates={taskTemplates}
               onApplyTemplate={(templateId) => applyTemplateToDeal(templateId, selectedDeal)}
+              productCatalog={productCatalog}
+              costCatalog={costCatalog}
+              reasonCatalog={reasonCatalog}
+              orgSettings={orgSettings}
             />
           )}
 
@@ -1252,6 +1447,20 @@ export default function CRM({ user, profile, onLogout }) {
               importHistory={importHistory}
               onImportDone={reload}
               companies={companies}
+              orgSettings={orgSettings}
+              onUpdateOrgSettings={updateOrgSettings}
+              contactPositions={contactPositions}
+              onSaveContactPosition={saveContactPosition}
+              onRemoveContactPosition={removeContactPosition}
+              reasonCatalog={reasonCatalog}
+              onSaveReasonCatalogItem={saveReasonCatalogItem}
+              onRemoveReasonCatalogItem={removeReasonCatalogItem}
+              productCatalog={productCatalog}
+              onSaveProductCatalogItem={saveProductCatalogItem}
+              onRemoveProductCatalogItem={removeProductCatalogItem}
+              costCatalog={costCatalog}
+              onSaveCostCatalogItem={saveCostCatalogItem}
+              onRemoveCostCatalogItem={removeCostCatalogItem}
             />
           )}
         </main>
@@ -1262,6 +1471,7 @@ export default function CRM({ user, profile, onLogout }) {
             staff={staff}
             canReassign={profile.role === "admin"}
             currentUserId={user.id}
+            contactPositions={contactPositions}
             onClose={() => setShowCompanyForm(false)}
             onSave={async (company) => {
               const saved = await upsertCompany(company);
@@ -1276,6 +1486,7 @@ export default function CRM({ user, profile, onLogout }) {
             initial={editingDeal}
             companyId={dealFormCompanyId}
             currentUserId={user.id}
+            defaultVisibility={orgSettings.defaultDealVisibility}
             onClose={() => setShowDealForm(false)}
             onSave={async (deal) => {
               const saved = await upsertDeal(deal);
@@ -1725,6 +1936,7 @@ function CompanyDetail({
             <DetailRow icon={MapPin} label="Adres" value={company.address} />
             <DetailRow icon={Building2} label="NIP" value={company.nip} />
             <DetailRow icon={UserPlus} label="Osoba kontaktowa" value={company.contactPerson} />
+            <DetailRow icon={UserPlus} label="Stanowisko" value={company.contactPosition} />
             <DetailRow icon={Tag} label="Źródło pozyskania" value={company.source} />
           </div>
 
@@ -2022,6 +2234,7 @@ function DealDetail({
   deal, company, tasks, products, costs, activities, onBack, onEdit, onDelete, onUpdateDeal,
   onAddTask, onToggleTask, onDeleteTask, onAddProduct, onDeleteProduct, onAddCost, onDeleteCost,
   onOpenCompany, showCompanyLink, taskTemplates, onApplyTemplate,
+  productCatalog = [], costCatalog = [], reasonCatalog = [], orgSettings,
 }) {
   const [newTaskType, setNewTaskType] = useState("call");
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -2055,7 +2268,7 @@ function DealDetail({
 
   function saveReason() {
     if (deal.status === "wygrana") onUpdateDeal({ winReason: reasonDraft });
-    else if (deal.status === "przegrana") onUpdateDeal({ lossReason: reasonDraft });
+    else if (deal.status === "przegrana" || deal.status === "nieaktualna") onUpdateDeal({ lossReason: reasonDraft });
   }
 
   return (
@@ -2102,9 +2315,28 @@ function DealDetail({
             ))}
           </div>
 
-          {(deal.status === "wygrana" || deal.status === "przegrana") && (
+          {(deal.status === "wygrana" || deal.status === "przegrana" || deal.status === "nieaktualna") && (
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #E7E5E2" }}>
-              <div style={S.label}>{deal.status === "wygrana" ? "Powód wygranej" : "Powód przegranej"}</div>
+              <div style={S.label}>
+                {deal.status === "wygrana" ? "Powód wygranej" : deal.status === "przegrana" ? "Powód przegranej" : "Powód nieaktualności"}
+              </div>
+              {reasonCatalog.filter((r) => r.type === deal.status).length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    setReasonDraft(e.target.value);
+                    if (deal.status === "wygrana") onUpdateDeal({ winReason: e.target.value });
+                    else onUpdateDeal({ lossReason: e.target.value });
+                  }}
+                  style={{ ...S.select, marginTop: 6, width: "100%" }}
+                >
+                  <option value="">— szybki wybór z listy powodów —</option>
+                  {reasonCatalog.filter((r) => r.type === deal.status).map((r) => (
+                    <option key={r.id} value={r.label}>{r.label}</option>
+                  ))}
+                </select>
+              )}
               <textarea
                 value={reasonDraft || ""}
                 onChange={(e) => setReasonDraft(e.target.value)}
@@ -2134,15 +2366,17 @@ function DealDetail({
         </section>
 
         <section style={{ ...S.card, flex: 1 }}>
-          <div style={{ marginTop: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B6B6B", fontWeight: 600, marginBottom: 6 }}>
-              <span>Prawdopodobieństwo sprzedaży</span>
-              <span style={{ color: "#111111", fontWeight: 700 }}>{pct}%</span>
+          {(!orgSettings || orgSettings.showProbability !== false) && (
+            <div style={{ marginTop: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B6B6B", fontWeight: 600, marginBottom: 6 }}>
+                <span>Prawdopodobieństwo sprzedaży</span>
+                <span style={{ color: "#111111", fontWeight: 700 }}>{pct}%</span>
+              </div>
+              <div style={{ background: "#F0EFEC", borderRadius: 6, height: 8, overflow: "hidden" }}>
+                <div style={{ width: `${pct}%`, background: "#E4241B", height: "100%", borderRadius: 6 }} />
+              </div>
             </div>
-            <div style={{ background: "#F0EFEC", borderRadius: 6, height: 8, overflow: "hidden" }}>
-              <div style={{ width: `${pct}%`, background: "#E4241B", height: "100%", borderRadius: 6 }} />
-            </div>
-          </div>
+          )}
 
           <div style={{ marginTop: 22 }}>
             <SalesProcessCard key={deal.id} deal={deal} company={company} onUpdateDeal={onUpdateDeal} />
@@ -2166,18 +2400,24 @@ function DealDetail({
       </div>
 
       <div style={S.twoCol}>
-        <section style={{ ...S.card, flex: 1 }}>
-          <h3 style={{ ...S.cardTitle, display: "flex", alignItems: "center", gap: 8 }}><Package size={15} /> Produkty i koszty</h3>
-          <ProductsCostsCard
-            deal={deal}
-            products={products}
-            costs={costs}
-            onAddProduct={onAddProduct}
-            onDeleteProduct={onDeleteProduct}
-            onAddCost={onAddCost}
-            onDeleteCost={onDeleteCost}
-          />
-        </section>
+        {(!orgSettings || orgSettings.enableProducts !== false || orgSettings.enableCosts !== false) && (
+          <section style={{ ...S.card, flex: 1 }}>
+            <h3 style={{ ...S.cardTitle, display: "flex", alignItems: "center", gap: 8 }}><Package size={15} /> Produkty i koszty</h3>
+            <ProductsCostsCard
+              deal={deal}
+              products={products}
+              costs={costs}
+              onAddProduct={onAddProduct}
+              onDeleteProduct={onDeleteProduct}
+              onAddCost={onAddCost}
+              onDeleteCost={onDeleteCost}
+              productCatalog={productCatalog}
+              costCatalog={costCatalog}
+              showProducts={!orgSettings || orgSettings.enableProducts !== false}
+              showCosts={!orgSettings || orgSettings.enableCosts !== false}
+            />
+          </section>
+        )}
 
         <section style={{ ...S.card, flex: 1 }}>
           <h3 style={S.cardTitle}>Zadania</h3>
@@ -2244,13 +2484,31 @@ function DealDetail({
   );
 }
 
-function ProductsCostsCard({ deal, products, costs, onAddProduct, onDeleteProduct, onAddCost, onDeleteCost }) {
+function ProductsCostsCard({
+  deal, products, costs, onAddProduct, onDeleteProduct, onAddCost, onDeleteCost,
+  productCatalog = [], costCatalog = [], showProducts = true, showCosts = true,
+}) {
   const [pName, setPName] = useState("");
   const [pQty, setPQty] = useState("1");
   const [pUnit, setPUnit] = useState("");
   const [pCost, setPCost] = useState("");
   const [cName, setCName] = useState("");
   const [cAmount, setCAmount] = useState("");
+
+  function pickProductFromCatalog(name) {
+    setPName(name);
+    const match = productCatalog.find((p) => p.name === name);
+    if (match) {
+      setPUnit(String(match.defaultPrice || ""));
+      setPCost(String(match.defaultCost || ""));
+    }
+  }
+
+  function pickCostFromCatalog(name) {
+    setCName(name);
+    const match = costCatalog.find((c) => c.name === name);
+    if (match) setCAmount(String(match.defaultAmount || ""));
+  }
 
   const revenue = products.reduce((s, p) => s + (Number(p.unitPrice) || 0) * (Number(p.quantity) || 0), 0);
   const productCost = products.reduce((s, p) => s + (Number(p.costPrice) || 0) * (Number(p.quantity) || 0), 0);
@@ -2280,41 +2538,67 @@ function ProductsCostsCard({ deal, products, costs, onAddProduct, onDeleteProduc
         <SummaryFigure value={`${marginPct}%`} label="Marża %" color="#111111" />
       </div>
 
-      <div style={S.label}>Produkty</div>
-      <form onSubmit={submitProduct} style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6, marginBottom: 8 }}>
-        <input value={pName} onChange={(e) => setPName(e.target.value)} placeholder="Nazwa" style={{ ...S.input, flex: 2, minWidth: 100 }} />
-        <input value={pQty} onChange={(e) => setPQty(e.target.value)} type="number" placeholder="Ilość" style={{ ...S.input, flex: 1, minWidth: 60 }} />
-        <input value={pUnit} onChange={(e) => setPUnit(e.target.value)} type="number" placeholder="Cena" style={{ ...S.input, flex: 1, minWidth: 70 }} />
-        <input value={pCost} onChange={(e) => setPCost(e.target.value)} type="number" placeholder="Koszt wł." style={{ ...S.input, flex: 1, minWidth: 70 }} />
-        <button type="submit" style={S.secondaryBtn}><Plus size={13} /></button>
-      </form>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
-        {products.length === 0 && <EmptyNote text="Brak produktów." />}
-        {products.map((p) => (
-          <div key={p.id} style={S.urgentRow}>
-            <div style={{ flex: 1, fontSize: 12.5 }}>
-              {p.name} · {p.quantity} × {fmtMoney(p.unitPrice)}
-            </div>
-            <button onClick={() => onDeleteProduct(p.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+      {showProducts && (
+        <>
+          <div style={S.label}>Produkty</div>
+          <form onSubmit={submitProduct} style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6, marginBottom: 8 }}>
+            <input
+              value={pName}
+              onChange={(e) => pickProductFromCatalog(e.target.value)}
+              placeholder="Nazwa"
+              list="product-catalog-suggestions"
+              style={{ ...S.input, flex: 2, minWidth: 100 }}
+            />
+            <datalist id="product-catalog-suggestions">
+              {productCatalog.map((p) => <option key={p.id} value={p.name} />)}
+            </datalist>
+            <input value={pQty} onChange={(e) => setPQty(e.target.value)} type="number" placeholder="Ilość" style={{ ...S.input, flex: 1, minWidth: 60 }} />
+            <input value={pUnit} onChange={(e) => setPUnit(e.target.value)} type="number" placeholder="Cena" style={{ ...S.input, flex: 1, minWidth: 70 }} />
+            <input value={pCost} onChange={(e) => setPCost(e.target.value)} type="number" placeholder="Koszt wł." style={{ ...S.input, flex: 1, minWidth: 70 }} />
+            <button type="submit" style={S.secondaryBtn}><Plus size={13} /></button>
+          </form>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+            {products.length === 0 && <EmptyNote text="Brak produktów." />}
+            {products.map((p) => (
+              <div key={p.id} style={S.urgentRow}>
+                <div style={{ flex: 1, fontSize: 12.5 }}>
+                  {p.name} · {p.quantity} × {fmtMoney(p.unitPrice)}
+                </div>
+                <button onClick={() => onDeleteProduct(p.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
 
-      <div style={S.label}>Dodatkowe koszty</div>
-      <form onSubmit={submitCost} style={{ display: "flex", gap: 6, marginTop: 6, marginBottom: 8 }}>
-        <input value={cName} onChange={(e) => setCName(e.target.value)} placeholder="Nazwa kosztu" style={{ ...S.input, flex: 2 }} />
-        <input value={cAmount} onChange={(e) => setCAmount(e.target.value)} type="number" placeholder="Kwota" style={{ ...S.input, flex: 1 }} />
-        <button type="submit" style={S.secondaryBtn}><Plus size={13} /></button>
-      </form>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {costs.length === 0 && <EmptyNote text="Brak dodatkowych kosztów." />}
-        {costs.map((c) => (
-          <div key={c.id} style={S.urgentRow}>
-            <div style={{ flex: 1, fontSize: 12.5 }}>{c.name} · {fmtMoney(c.amount)}</div>
-            <button onClick={() => onDeleteCost(c.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+      {showCosts && (
+        <>
+          <div style={S.label}>Dodatkowe koszty</div>
+          <form onSubmit={submitCost} style={{ display: "flex", gap: 6, marginTop: 6, marginBottom: 8 }}>
+            <input
+              value={cName}
+              onChange={(e) => pickCostFromCatalog(e.target.value)}
+              placeholder="Nazwa kosztu"
+              list="cost-catalog-suggestions"
+              style={{ ...S.input, flex: 2 }}
+            />
+            <datalist id="cost-catalog-suggestions">
+              {costCatalog.map((c) => <option key={c.id} value={c.name} />)}
+            </datalist>
+            <input value={cAmount} onChange={(e) => setCAmount(e.target.value)} type="number" placeholder="Kwota" style={{ ...S.input, flex: 1 }} />
+            <button type="submit" style={S.secondaryBtn}><Plus size={13} /></button>
+          </form>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {costs.length === 0 && <EmptyNote text="Brak dodatkowych kosztów." />}
+            {costs.map((c) => (
+              <div key={c.id} style={S.urgentRow}>
+                <div style={{ flex: 1, fontSize: 12.5 }}>{c.name} · {fmtMoney(c.amount)}</div>
+                <button onClick={() => onDeleteCost(c.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </div>
   );
 }
@@ -2710,10 +2994,10 @@ function CalendarView({ tasks, onOpenDeal }) {
 }
 
 /* ---------- Company form modal (z wyszukiwaniem NIP) ---------- */
-function CompanyFormModal({ initial, staff = [], canReassign = false, currentUserId, onClose, onSave }) {
+function CompanyFormModal({ initial, staff = [], canReassign = false, currentUserId, contactPositions = [], onClose, onSave }) {
   const [form, setForm] = useState(() => initial || {
     id: null, name: "", phone: "", email: "", address: "", nip: "",
-    notes: "", contactPerson: "", source: "", tags: [], pinnedNote: "", ownerId: currentUserId,
+    notes: "", contactPerson: "", contactPosition: "", source: "", tags: [], pinnedNote: "", ownerId: currentUserId,
   });
   const [saving, setSaving] = useState(false);
   const [nipLoading, setNipLoading] = useState(false);
@@ -2777,6 +3061,19 @@ function CompanyFormModal({ initial, staff = [], canReassign = false, currentUse
           </div>
           <Field label="Osoba kontaktowa" value={form.contactPerson} onChange={(v) => set("contactPerson", v)} />
           <div>
+            <label style={S.label}>Stanowisko osoby kontaktowej</label>
+            <input
+              value={form.contactPosition || ""}
+              onChange={(e) => set("contactPosition", e.target.value)}
+              list="contact-position-suggestions"
+              style={S.input}
+              placeholder="np. Właściciel, Dyrektor floty"
+            />
+            <datalist id="contact-position-suggestions">
+              {contactPositions.map((p) => <option key={p.id} value={p.name} />)}
+            </datalist>
+          </div>
+          <div>
             <label style={S.label}>Źródło pozyskania</label>
             <select value={form.source} onChange={(e) => set("source", e.target.value)} style={S.input}>
               <option value="">— wybierz —</option>
@@ -2820,10 +3117,10 @@ function CompanyFormModal({ initial, staff = [], canReassign = false, currentUse
 }
 
 /* ---------- Deal form modal (szansa sprzedaży) ---------- */
-function DealFormModal({ initial, companyId, currentUserId, onClose, onSave }) {
+function DealFormModal({ initial, companyId, currentUserId, defaultVisibility = "Publiczna", onClose, onSave }) {
   const [form, setForm] = useState(() => initial || {
     id: null, companyId, name: "", carInterest: "", budget: "", financing: FINANCING[0],
-    decisionDate: "", status: "otwarta", purchaseType: "", visibility: "Publiczna", notes: "",
+    decisionDate: "", status: "otwarta", purchaseType: "", visibility: defaultVisibility, notes: "",
     ownerId: currentUserId,
   });
   const [saving, setSaving] = useState(false);
@@ -3203,9 +3500,20 @@ const SETTINGS_SECTIONS = [
   { key: "regional", label: "Ustawienia regionalne" },
 ];
 
+const ORG_SETTINGS_SECTIONS = [
+  { key: "orgUsers", label: "Użytkownicy" },
+  { key: "orgPermissions", label: "Uprawnienia" },
+  { key: "orgContacts", label: "Kontakty" },
+  { key: "orgDeals", label: "Szanse sprzedaży" },
+];
+
 function SettingsPanel({
   user, profile, goals, onUpdateGoals, regionalSettings, notificationSettings, onUpdateUserSettings,
   taskTemplates, templateItems, onSaveTemplate, onRemoveTemplate, importHistory, onImportDone, companies,
+  orgSettings, onUpdateOrgSettings, contactPositions, onSaveContactPosition, onRemoveContactPosition,
+  reasonCatalog, onSaveReasonCatalogItem, onRemoveReasonCatalogItem,
+  productCatalog, onSaveProductCatalogItem, onRemoveProductCatalogItem,
+  costCatalog, onSaveCostCatalogItem, onRemoveCostCatalogItem,
 }) {
   const [section, setSection] = useState("profile");
   const isAdmin = profile.role === "admin";
@@ -3219,6 +3527,18 @@ function SettingsPanel({
           ))}
           {isAdmin && <SidebarItem label="Cele i zespół" active={section === "team"} onClick={() => setSection("team")} />}
         </div>
+        {isAdmin && (
+          <div style={{ marginTop: 20 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: "#9A9A9A", padding: "0 9px", marginBottom: 6 }}>
+              Ustawienia CRM
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {ORG_SETTINGS_SECTIONS.map((s) => (
+                <SidebarItem key={s.key} label={s.label} active={section === s.key} onClick={() => setSection(s.key)} />
+              ))}
+            </div>
+          </div>
+        )}
       </aside>
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -3242,6 +3562,32 @@ function SettingsPanel({
         {section === "files" && <FilesPlaceholderPanel />}
         {section === "regional" && (
           <RegionalSettingsPanel regionalSettings={regionalSettings} onUpdateUserSettings={onUpdateUserSettings} />
+        )}
+        {section === "orgUsers" && isAdmin && <OrgUsersSettingsPanel user={user} />}
+        {section === "orgPermissions" && isAdmin && (
+          <OrgPermissionsSettingsPanel orgSettings={orgSettings} onUpdateOrgSettings={onUpdateOrgSettings} />
+        )}
+        {section === "orgContacts" && isAdmin && (
+          <OrgContactsSettingsPanel
+            contactPositions={contactPositions}
+            onSaveContactPosition={onSaveContactPosition}
+            onRemoveContactPosition={onRemoveContactPosition}
+          />
+        )}
+        {section === "orgDeals" && isAdmin && (
+          <OrgDealsSettingsPanel
+            orgSettings={orgSettings}
+            onUpdateOrgSettings={onUpdateOrgSettings}
+            reasonCatalog={reasonCatalog}
+            onSaveReasonCatalogItem={onSaveReasonCatalogItem}
+            onRemoveReasonCatalogItem={onRemoveReasonCatalogItem}
+            productCatalog={productCatalog}
+            onSaveProductCatalogItem={onSaveProductCatalogItem}
+            onRemoveProductCatalogItem={onRemoveProductCatalogItem}
+            costCatalog={costCatalog}
+            onSaveCostCatalogItem={onSaveCostCatalogItem}
+            onRemoveCostCatalogItem={onRemoveCostCatalogItem}
+          />
         )}
         {section === "team" && isAdmin && <TeamGoalsSettingsPanel user={user} goals={goals} onUpdateGoals={onUpdateGoals} />}
       </div>
@@ -4051,6 +4397,464 @@ function TeamGoalsSettingsPanel({ user, goals, onUpdateGoals }) {
           zaraz po utworzeniu konta — wtedy przypisz jej właściwą rolę (Doradca lub Administrator).
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   Ustawienia CRM (poziom organizacji / admina) — Użytkownicy,
+   Uprawnienia, Kontakty -> Stanowiska, Szanse sprzedaży -> Ogólne /
+   Produkty / Koszty / Powody zmiany statusu.
+   ================================================================ */
+
+function SubTabs({ tabs, active, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          onClick={() => onChange(t.key)}
+          style={{
+            background: active === t.key ? "#111111" : "#F0EFEC", color: active === t.key ? "#fff" : "#111111",
+            border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 600,
+          }}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Użytkownicy ---------- */
+function OrgUsersSettingsPanel({ user }) {
+  const [subTab, setSubTab] = useState("users");
+  const [staff, setStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadStaff = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+    setStaff(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadStaff(); }, [loadStaff]);
+
+  const changeRole = async (id, role) => {
+    await supabase.from("profiles").update({ role }).eq("id", id);
+    setStaff((prev) => prev.map((p) => (p.id === id ? { ...p, role } : p)));
+  };
+
+  return (
+    <div style={S.stack}>
+      <SubTabs
+        tabs={[{ key: "users", label: "Użytkownicy" }, { key: "roles", label: "Role" }, { key: "invites", label: "Zaproszenia" }]}
+        active={subTab}
+        onChange={setSubTab}
+      />
+
+      {subTab === "users" && (
+        <div style={S.card}>
+          <div style={S.cardTitle}>Użytkownicy CRM</div>
+          <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
+            Wszystkie konta z dostępem do tego CRM. Rolę zmieniasz bezpośrednio na liście.
+          </div>
+          {loading ? (
+            <div style={{ fontSize: 13, color: "#9A9A9A" }}>Wczytywanie…</div>
+          ) : staff.length === 0 ? (
+            <EmptyNote text="Brak kont w systemie." />
+          ) : (
+            <div>
+              <div style={S.tableHeader}>
+                <span style={{ flex: 2 }}>Osoba</span>
+                <span style={{ flex: 1.4 }}>Rola</span>
+              </div>
+              {staff.map((p) => (
+                <div key={p.id} style={S.tableRow}>
+                  <span style={{ flex: 2, textAlign: "left" }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>{p.full_name || "—"}</div>
+                    <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{p.email || p.id}</div>
+                  </span>
+                  <span style={{ flex: 1.4, textAlign: "left" }}>
+                    <select value={p.role} onChange={(e) => changeRole(p.id, e.target.value)} style={S.select} disabled={p.id === user.id}>
+                      <option value="admin">Administrator</option>
+                      <option value="doradca">Doradca</option>
+                      <option value="client">Klient</option>
+                    </select>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {subTab === "roles" && (
+        <div style={S.stack}>
+          <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5 }}>
+            CRM ma obecnie 3 wbudowane role o stałych uprawnieniach. Własne, konfigurowalne role (z indywidualnie
+            dobieranymi uprawnieniami do poszczególnych modułów) to znacznie większa zmiana — nie jest jeszcze
+            zbudowana, może pojawić się w kolejnej aktualizacji.
+          </div>
+          {[
+            { name: "Administrator", desc: "Pełny dostęp: zarządza użytkownikami i rolami, celami zespołu, katalogami (stanowiska, powody, produkty, koszty) oraz ustawieniami CRM. Może usuwać firmy i szanse sprzedaży innych opiekunów." },
+            { name: "Doradca", desc: "Codzienna praca w CRM: firmy, szanse sprzedaży, zadania, kalendarz. Widzi dane całego zespołu (zgodnie z ustawieniami widoczności), ale nie ma dostępu do Ustawień CRM." },
+            { name: "Klient", desc: "Rola przygotowana pod przyszły ograniczony dostęp (np. portal klienta) — obecnie traktowana jak konto bez dostępu do zarządzania CRM." },
+          ].map((r) => (
+            <div key={r.name} style={S.card}>
+              <div style={S.cardTitle}>{r.name}</div>
+              <div style={{ fontSize: 12.5, color: "#6B6B6B", marginTop: 6, lineHeight: 1.5 }}>{r.desc}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {subTab === "invites" && (
+        <div style={S.card}>
+          <div style={S.cardTitle}>Zaproszenia e-mail</div>
+          <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginTop: 12, marginBottom: 16, lineHeight: 1.5 }}>
+            Wysyłka zaproszeń e-mail wymaga podłączenia serwera pocztowego / uprawnień administracyjnych
+            Supabase (klucz service role), których to okno przeglądarki nie może bezpiecznie przechowywać —
+            dlatego tej funkcji tu jeszcze nie ma. Do czasu jej dodania nowe konta zakłada się ręcznie: w
+            Supabase → Authentication → Users → "Add user", a rolę przypisujesz w zakładce "Użytkownicy" obok.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Uprawnienia ---------- */
+function OrgPermissionsSettingsPanel({ orgSettings, onUpdateOrgSettings }) {
+  const [subTab, setSubTab] = useState("access");
+  const [saving, setSaving] = useState(false);
+
+  async function setDefaultVisibility(v) {
+    setSaving(true);
+    await onUpdateOrgSettings({ defaultDealVisibility: v });
+    setSaving(false);
+  }
+
+  return (
+    <div style={S.stack}>
+      <SubTabs
+        tabs={[{ key: "access", label: "Dostępy" }, { key: "visibility", label: "Widoczność" }]}
+        active={subTab}
+        onChange={setSubTab}
+      />
+
+      {subTab === "access" && (
+        <div style={S.stack}>
+          <div style={S.card}>
+            <div style={S.cardTitle}>Jak działają dostępy dzisiaj</div>
+            <div style={{ fontSize: 12.5, color: "#6B6B6B", marginTop: 8, lineHeight: 1.6 }}>
+              Administratorzy mają pełny dostęp do wszystkich modułów, w tym Ustawień CRM. Doradcy widzą
+              wspólne dane zespołu (firmy, szanse sprzedaży, zadania) i mogą je edytować, ale nie widzą
+              Ustawień CRM. Dodatkowo: administratorzy mogą usuwać firmy i szanse sprzedaży należące do
+              innych opiekunów — zwykli doradcy mogą usuwać wyłącznie własne rekordy.
+            </div>
+          </div>
+          <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5 }}>
+            Pełna macierz uprawnień (osobno dla każdej roli i każdego modułu, jak w rozbudowanych systemach CRM)
+            to duża, osobna funkcja — nie jest jeszcze zbudowana. Obecny model (3 stałe role) pokrywa większość
+            typowych potrzeb małego zespołu sprzedażowego.
+          </div>
+        </div>
+      )}
+
+      {subTab === "visibility" && (
+        <div style={S.card}>
+          <div style={S.cardTitle}>Widoczność szans sprzedaży</div>
+          <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+            Każda szansa sprzedaży ma pole „Widoczność" (Publiczna / Prywatna), ustawiane indywidualnie w jej
+            karcie. Poniżej wybierasz, jaka wartość ma być podpowiadana domyślnie przy zakładaniu nowej szansy.
+          </div>
+          <label style={S.label}>Domyślna widoczność nowej szansy sprzedaży</label>
+          <select
+            value={orgSettings.defaultDealVisibility}
+            onChange={(e) => setDefaultVisibility(e.target.value)}
+            disabled={saving}
+            style={{ ...S.select, marginTop: 6, maxWidth: 260 }}
+          >
+            <option value="Publiczna">Publiczna</option>
+            <option value="Prywatna">Prywatna</option>
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Kontakty (Stanowiska) ---------- */
+function OrgContactsSettingsPanel({ contactPositions, onSaveContactPosition, onRemoveContactPosition }) {
+  const [subTab, setSubTab] = useState("positions");
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    await onSaveContactPosition({ name: name.trim() });
+    setName("");
+    setSaving(false);
+  }
+
+  return (
+    <div style={S.stack}>
+      <SubTabs tabs={[{ key: "positions", label: "Stanowiska" }]} active={subTab} onChange={setSubTab} />
+
+      {subTab === "positions" && (
+        <div style={S.card}>
+          <div style={S.cardTitle}>Stanowiska osoby kontaktowej</div>
+          <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
+            Lista podpowiedzi widoczna w formularzu firmy przy polu „Stanowisko osoby kontaktowej".
+          </div>
+          <form onSubmit={submit} style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="np. Dyrektor floty" style={{ ...S.input, flex: 1 }} />
+            <button type="submit" disabled={saving} style={S.primaryBtn}><Plus size={14} /> Dodaj</button>
+          </form>
+          {contactPositions.length === 0 ? (
+            <EmptyNote text="Brak zdefiniowanych stanowisk." />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {contactPositions.map((p) => (
+                <div key={p.id} style={S.urgentRow}>
+                  <div style={{ flex: 1, fontSize: 13 }}>{p.name}</div>
+                  <button onClick={() => onRemoveContactPosition(p.id)} className="iconBtn" style={S.iconBtnStyle}><X size={14} color="#9A9A9A" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Szanse sprzedaży ---------- */
+const DEAL_REASON_TYPES = [
+  { key: "wygrana", label: "Wygrane" },
+  { key: "przegrana", label: "Przegrane" },
+  { key: "nieaktualna", label: "Nieaktualne" },
+];
+
+function OrgDealsSettingsPanel({
+  orgSettings, onUpdateOrgSettings,
+  reasonCatalog, onSaveReasonCatalogItem, onRemoveReasonCatalogItem,
+  productCatalog, onSaveProductCatalogItem, onRemoveProductCatalogItem,
+  costCatalog, onSaveCostCatalogItem, onRemoveCostCatalogItem,
+}) {
+  const [subTab, setSubTab] = useState("general");
+
+  return (
+    <div style={S.stack}>
+      <SubTabs
+        tabs={[
+          { key: "general", label: "Ogólne" },
+          { key: "products", label: "Produkty" },
+          { key: "costs", label: "Koszty" },
+          { key: "reasons", label: "Powody zmiany statusu" },
+        ]}
+        active={subTab}
+        onChange={setSubTab}
+      />
+      {subTab === "general" && <DealsGeneralSettingsPanel orgSettings={orgSettings} onUpdateOrgSettings={onUpdateOrgSettings} />}
+      {subTab === "products" && (
+        <ProductCatalogSettingsPanel
+          productCatalog={productCatalog}
+          onSaveProductCatalogItem={onSaveProductCatalogItem}
+          onRemoveProductCatalogItem={onRemoveProductCatalogItem}
+        />
+      )}
+      {subTab === "costs" && (
+        <CostCatalogSettingsPanel
+          costCatalog={costCatalog}
+          onSaveCostCatalogItem={onSaveCostCatalogItem}
+          onRemoveCostCatalogItem={onRemoveCostCatalogItem}
+        />
+      )}
+      {subTab === "reasons" && (
+        <ReasonCatalogSettingsPanel
+          reasonCatalog={reasonCatalog}
+          onSaveReasonCatalogItem={onSaveReasonCatalogItem}
+          onRemoveReasonCatalogItem={onRemoveReasonCatalogItem}
+        />
+      )}
+    </div>
+  );
+}
+
+function DealsGeneralSettingsPanel({ orgSettings, onUpdateOrgSettings }) {
+  async function toggle(key) {
+    await onUpdateOrgSettings({ [key]: !orgSettings[key] });
+  }
+
+  const rows = [
+    { key: "showProbability", label: "Pokazuj prawdopodobieństwo sprzedaży w karcie szansy" },
+    { key: "enableProducts", label: "Włącz sekcję Produkty w szansach sprzedaży" },
+    { key: "enableCosts", label: "Włącz sekcję Koszty w szansach sprzedaży" },
+  ];
+
+  return (
+    <div style={S.stack}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Ogólne</div>
+        <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+          Przełączniki dotyczą wszystkich szans sprzedaży w całym CRM.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {rows.map((r) => (
+            <label key={r.key} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+              <Toggle checked={orgSettings[r.key] !== false} onChange={() => toggle(r.key)} /> {r.label}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Waluta</div>
+        <div style={{ fontSize: 12.5, color: "#6B6B6B", marginTop: 4, lineHeight: 1.5 }}>
+          Format kwot i symbol waluty ustawiasz w zakładce „Ustawienia regionalne" (sekcja osobista, wspólna
+          dla wszystkich, bo dotyczy formatowania liczb w całym interfejsie) — nie duplikujemy tego ustawienia tutaj.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductCatalogSettingsPanel({ productCatalog, onSaveProductCatalogItem, onRemoveProductCatalogItem }) {
+  const [form, setForm] = useState({ name: "", sku: "", defaultPrice: "", defaultCost: "" });
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setSaving(true);
+    await onSaveProductCatalogItem(form);
+    setForm({ name: "", sku: "", defaultPrice: "", defaultCost: "" });
+    setSaving(false);
+  }
+
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>Katalog produktów</div>
+      <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
+        Podpowiadany przy dodawaniu produktu do szansy sprzedaży — wybranie nazwy z listy uzupełnia cenę i koszt własny.
+      </div>
+      <form onSubmit={submit} style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+        <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Nazwa" style={{ ...S.input, flex: 2, minWidth: 120 }} />
+        <input value={form.sku} onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))} placeholder="SKU" style={{ ...S.input, flex: 1, minWidth: 80 }} />
+        <input value={form.defaultPrice} onChange={(e) => setForm((f) => ({ ...f, defaultPrice: e.target.value }))} type="number" placeholder="Domyślna cena" style={{ ...S.input, flex: 1, minWidth: 90 }} />
+        <input value={form.defaultCost} onChange={(e) => setForm((f) => ({ ...f, defaultCost: e.target.value }))} type="number" placeholder="Domyślny koszt" style={{ ...S.input, flex: 1, minWidth: 90 }} />
+        <button type="submit" disabled={saving} style={S.secondaryBtn}><Plus size={13} /></button>
+      </form>
+      {productCatalog.length === 0 ? (
+        <EmptyNote text="Katalog produktów jest pusty." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {productCatalog.map((p) => (
+            <div key={p.id} style={S.urgentRow}>
+              <div style={{ flex: 1, fontSize: 12.5 }}>
+                {p.name}{p.sku ? ` · ${p.sku}` : ""} · {fmtMoney(p.defaultPrice)} (koszt {fmtMoney(p.defaultCost)})
+              </div>
+              <button onClick={() => onRemoveProductCatalogItem(p.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CostCatalogSettingsPanel({ costCatalog, onSaveCostCatalogItem, onRemoveCostCatalogItem }) {
+  const [form, setForm] = useState({ name: "", defaultAmount: "" });
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setSaving(true);
+    await onSaveCostCatalogItem(form);
+    setForm({ name: "", defaultAmount: "" });
+    setSaving(false);
+  }
+
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>Katalog kosztów</div>
+      <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
+        Podpowiadany przy dodawaniu dodatkowego kosztu do szansy sprzedaży.
+      </div>
+      <form onSubmit={submit} style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Nazwa kosztu" style={{ ...S.input, flex: 2 }} />
+        <input value={form.defaultAmount} onChange={(e) => setForm((f) => ({ ...f, defaultAmount: e.target.value }))} type="number" placeholder="Domyślna kwota" style={{ ...S.input, flex: 1 }} />
+        <button type="submit" disabled={saving} style={S.secondaryBtn}><Plus size={13} /></button>
+      </form>
+      {costCatalog.length === 0 ? (
+        <EmptyNote text="Katalog kosztów jest pusty." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {costCatalog.map((c) => (
+            <div key={c.id} style={S.urgentRow}>
+              <div style={{ flex: 1, fontSize: 12.5 }}>{c.name} · {fmtMoney(c.defaultAmount)}</div>
+              <button onClick={() => onRemoveCostCatalogItem(c.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReasonCatalogSettingsPanel({ reasonCatalog, onSaveReasonCatalogItem, onRemoveReasonCatalogItem }) {
+  const [drafts, setDrafts] = useState({ wygrana: "", przegrana: "", nieaktualna: "" });
+  const [saving, setSaving] = useState(null);
+
+  async function submit(type) {
+    const label = (drafts[type] || "").trim();
+    if (!label) return;
+    setSaving(type);
+    await onSaveReasonCatalogItem({ type, label });
+    setDrafts((d) => ({ ...d, [type]: "" }));
+    setSaving(null);
+  }
+
+  return (
+    <div style={S.stack}>
+      {DEAL_REASON_TYPES.map((t) => (
+        <div key={t.key} style={S.card}>
+          <div style={S.cardTitle}>{t.label}</div>
+          <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 14 }}>
+            Podpowiadane przy zmianie statusu szansy sprzedaży na „{t.label.toLowerCase()}".
+          </div>
+          <form
+            onSubmit={(e) => { e.preventDefault(); submit(t.key); }}
+            style={{ display: "flex", gap: 8, marginBottom: 12 }}
+          >
+            <input
+              value={drafts[t.key]}
+              onChange={(e) => setDrafts((d) => ({ ...d, [t.key]: e.target.value }))}
+              placeholder="np. Cena, Konkurencja, Brak kontaktu…"
+              style={{ ...S.input, flex: 1 }}
+            />
+            <button type="submit" disabled={saving === t.key} style={S.secondaryBtn}><Plus size={13} /></button>
+          </form>
+          {reasonCatalog.filter((r) => r.type === t.key).length === 0 ? (
+            <EmptyNote text="Brak zdefiniowanych powodów." />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {reasonCatalog.filter((r) => r.type === t.key).map((r) => (
+                <div key={r.id} style={S.urgentRow}>
+                  <div style={{ flex: 1, fontSize: 12.5 }}>{r.label}</div>
+                  <button onClick={() => onRemoveReasonCatalogItem(r.id)} className="iconBtn" style={S.iconBtnStyle}><X size={14} color="#9A9A9A" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
