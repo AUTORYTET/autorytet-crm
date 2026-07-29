@@ -3,7 +3,7 @@ import {
   Phone, Mail, MapPin, Building2, Car, Wallet, CalendarClock, Plus,
   Search, CheckCircle2, Circle, X, LayoutGrid, Users, ListChecks,
   Handshake, Bell, Trash2, ChevronRight, ChevronLeft, LogOut, Loader2, Settings, UserPlus, Edit2,
-  Tag, Pin, Send, Calendar, BarChart3, Package, Link2, Sparkles, Filter, MoreVertical
+  Tag, Pin, Send, Calendar, BarChart3, Package, Link2, Sparkles, Filter, MoreVertical, Download
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import logo from "./assets/logo.png";
@@ -52,6 +52,14 @@ const TASK_TYPES = {
 };
 
 const LEAD_SOURCES = ["Telefon", "Formularz WWW", "Polecenie", "Media społecznościowe", "Salon / wizyta", "Inne"];
+
+function taskTypeEntries(sortByPopularity, tasks) {
+  const entries = Object.entries(TASK_TYPES);
+  if (!sortByPopularity || !tasks) return entries;
+  const counts = {};
+  tasks.forEach((t) => { counts[t.type] = (counts[t.type] || 0) + 1; });
+  return [...entries].sort((a, b) => (counts[b[0]] || 0) - (counts[a[0]] || 0));
+}
 
 const VISIBILITY_OPTIONS = ["Publiczna", "Prywatna"];
 const PURCHASE_TYPES = ["Zakup gotówkowy", "Kredyt", "Leasing", "Wykup z leasingu", "Zamiana"];
@@ -302,6 +310,7 @@ function companyFromDb(row) {
     source: row.source || "",
     tags: Array.isArray(row.tags) ? row.tags : [],
     pinnedNote: row.pinned_note || "",
+    customFields: row.custom_fields || {},
   };
 }
 function companyToDb(c, fallbackOwnerId) {
@@ -313,6 +322,7 @@ function companyToDb(c, fallbackOwnerId) {
     source: c.source || null,
     tags: Array.isArray(c.tags) && c.tags.length ? c.tags : null,
     pinned_note: c.pinnedNote || null,
+    custom_fields: c.customFields || {},
   };
 }
 
@@ -335,6 +345,7 @@ function dealFromDb(row) {
     statusChangedAt: row.status_changed_at || row.created_at,
     notes: row.notes,
     createdAt: row.created_at,
+    customFields: row.custom_fields || {},
   };
 }
 function dealToDb(d, fallbackOwnerId) {
@@ -352,6 +363,7 @@ function dealToDb(d, fallbackOwnerId) {
     win_reason: d.winReason || null,
     loss_reason: d.lossReason || null,
     notes: d.notes,
+    custom_fields: d.customFields || {},
     owner_id: d.ownerId || fallbackOwnerId,
   };
 }
@@ -492,6 +504,8 @@ const DEFAULT_ORG_CONFIG = {
   enableProducts: true,
   enableCosts: true,
   advisorsCanEditOthers: true,
+  enableLeadSources: true,
+  sortTaskTypesByPopularity: false,
 };
 
 function orgSettingsFromDb(row) {
@@ -515,6 +529,24 @@ function productCatalogFromDb(row) {
 
 function costCatalogFromDb(row) {
   return { id: row.id, name: row.name, defaultAmount: row.default_amount, createdAt: row.created_at };
+}
+
+function salesProcessFromDb(row) {
+  return {
+    id: row.id, name: row.name, lengthDays: row.length_days,
+    active: row.active, isDefault: row.is_default, createdAt: row.created_at,
+  };
+}
+
+function leadSourceFromDb(row) {
+  return { id: row.id, name: row.name, sortOrder: row.sort_order, createdAt: row.created_at };
+}
+
+function customFieldDefFromDb(row) {
+  return {
+    id: row.id, entityType: row.entity_type, name: row.name,
+    fieldType: row.field_type, sortOrder: row.sort_order, createdAt: row.created_at,
+  };
 }
 
 function vehicleFromDb(row) {
@@ -626,6 +658,9 @@ export default function CRM({ user, profile, onLogout }) {
   const [reasonCatalog, setReasonCatalog] = useState([]);
   const [productCatalog, setProductCatalog] = useState([]);
   const [costCatalog, setCostCatalog] = useState([]);
+  const [salesProcesses, setSalesProcesses] = useState([]);
+  const [leadSources, setLeadSources] = useState([]);
+  const [customFieldDefs, setCustomFieldDefs] = useState([]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -641,6 +676,7 @@ export default function CRM({ user, profile, onLogout }) {
         dealsRes, taskRes, vehicleRes, activityRes, staffRes, goalsRes, productsRes, costsRes, relationsRes,
         userSettingsRes, templatesRes, templateItemsRes, importHistoryRes,
         orgSettingsRes, contactPositionsRes, reasonCatalogRes, productCatalogRes, costCatalogRes,
+        salesProcessesRes, leadSourcesRes, customFieldDefsRes,
       ] = await Promise.all([
         supabase.from("deals").select("*").order("created_at", { ascending: false }),
         supabase.from("tasks").select("*").order("due_date", { ascending: true }),
@@ -660,6 +696,9 @@ export default function CRM({ user, profile, onLogout }) {
         supabase.from("deal_reason_catalog").select("*").order("sort_order", { ascending: true }),
         supabase.from("product_catalog").select("*").order("created_at", { ascending: false }),
         supabase.from("cost_catalog").select("*").order("created_at", { ascending: false }),
+        supabase.from("sales_processes").select("*").order("created_at", { ascending: true }),
+        supabase.from("lead_sources").select("*").order("sort_order", { ascending: true }),
+        supabase.from("custom_field_definitions").select("*").order("sort_order", { ascending: true }),
       ]);
       if (taskRes.error) throw taskRes.error;
       if (vehicleRes.error) throw vehicleRes.error;
@@ -681,6 +720,9 @@ export default function CRM({ user, profile, onLogout }) {
       setReasonCatalog(reasonCatalogRes.error ? [] : (reasonCatalogRes.data || []).map(reasonCatalogFromDb));
       setProductCatalog(productCatalogRes.error ? [] : (productCatalogRes.data || []).map(productCatalogFromDb));
       setCostCatalog(costCatalogRes.error ? [] : (costCatalogRes.data || []).map(costCatalogFromDb));
+      setSalesProcesses(salesProcessesRes.error ? [] : (salesProcessesRes.data || []).map(salesProcessFromDb));
+      setLeadSources(leadSourcesRes.error ? [] : (leadSourcesRes.data || []).map(leadSourceFromDb));
+      setCustomFieldDefs(customFieldDefsRes.error ? [] : (customFieldDefsRes.data || []).map(customFieldDefFromDb));
       if (!goalsRes.error && goalsRes.data) {
         setGoals({
           contactsTarget: goalsRes.data.contacts_target,
@@ -1136,6 +1178,102 @@ export default function CRM({ user, profile, onLogout }) {
     }
   }, []);
 
+  const saveSalesProcess = useCallback(async (draft) => {
+    try {
+      const payload = {
+        name: draft.name, length_days: draft.lengthDays ? Number(draft.lengthDays) : 30,
+        active: draft.active !== false, is_default: !!draft.isDefault,
+      };
+      if (draft.isDefault) {
+        await supabase.from("sales_processes").update({ is_default: false }).neq("id", draft.id || "00000000-0000-0000-0000-000000000000");
+      }
+      if (draft.id) {
+        const { error } = await supabase.from("sales_processes").update(payload).eq("id", draft.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("sales_processes").insert(payload);
+        if (error) throw error;
+      }
+      const { data } = await supabase.from("sales_processes").select("*").order("created_at", { ascending: true });
+      setSalesProcesses((data || []).map(salesProcessFromDb));
+      return true;
+    } catch (e) {
+      setError("Nie udało się zapisać procesu sprzedaży: " + (e.message || ""));
+      return false;
+    }
+  }, []);
+
+  const removeSalesProcess = useCallback(async (id) => {
+    try {
+      const { error } = await supabase.from("sales_processes").delete().eq("id", id);
+      if (error) throw error;
+      setSalesProcesses((prev) => prev.filter((p) => p.id !== id));
+    } catch (e) {
+      setError("Nie udało się usunąć procesu sprzedaży: " + (e.message || ""));
+    }
+  }, []);
+
+  const saveLeadSource = useCallback(async (draft) => {
+    try {
+      if (draft.id) {
+        const { error } = await supabase.from("lead_sources").update({ name: draft.name }).eq("id", draft.id);
+        if (error) throw error;
+        setLeadSources((prev) => prev.map((s) => (s.id === draft.id ? { ...s, name: draft.name } : s)));
+      } else {
+        const { data, error } = await supabase.from("lead_sources")
+          .insert({ name: draft.name, sort_order: leadSources.length }).select().single();
+        if (error) throw error;
+        setLeadSources((prev) => [...prev, leadSourceFromDb(data)]);
+      }
+      return true;
+    } catch (e) {
+      setError("Nie udało się zapisać źródła pozyskania: " + (e.message || ""));
+      return false;
+    }
+  }, [leadSources]);
+
+  const removeLeadSource = useCallback(async (id) => {
+    try {
+      const { error } = await supabase.from("lead_sources").delete().eq("id", id);
+      if (error) throw error;
+      setLeadSources((prev) => prev.filter((s) => s.id !== id));
+    } catch (e) {
+      setError("Nie udało się usunąć źródła pozyskania: " + (e.message || ""));
+    }
+  }, []);
+
+  const saveCustomFieldDef = useCallback(async (draft) => {
+    try {
+      if (draft.id) {
+        const { error } = await supabase.from("custom_field_definitions")
+          .update({ name: draft.name, field_type: draft.fieldType }).eq("id", draft.id);
+        if (error) throw error;
+        setCustomFieldDefs((prev) => prev.map((d) => (d.id === draft.id ? { ...d, name: draft.name, fieldType: draft.fieldType } : d)));
+      } else {
+        const sameType = customFieldDefs.filter((d) => d.entityType === draft.entityType);
+        const { data, error } = await supabase.from("custom_field_definitions").insert({
+          entity_type: draft.entityType, name: draft.name, field_type: draft.fieldType || "text", sort_order: sameType.length,
+        }).select().single();
+        if (error) throw error;
+        setCustomFieldDefs((prev) => [...prev, customFieldDefFromDb(data)]);
+      }
+      return true;
+    } catch (e) {
+      setError("Nie udało się zapisać pola dodatkowego: " + (e.message || ""));
+      return false;
+    }
+  }, [customFieldDefs]);
+
+  const removeCustomFieldDef = useCallback(async (id) => {
+    try {
+      const { error } = await supabase.from("custom_field_definitions").delete().eq("id", id);
+      if (error) throw error;
+      setCustomFieldDefs((prev) => prev.filter((d) => d.id !== id));
+    } catch (e) {
+      setError("Nie udało się usunąć pola dodatkowego: " + (e.message || ""));
+    }
+  }, []);
+
   const filteredVehicles = useMemo(() => {
     return vehicles.filter((v) => vehicleStatusFilter === "all" || v.status === vehicleStatusFilter);
   }, [vehicles, vehicleStatusFilter]);
@@ -1324,6 +1462,7 @@ export default function CRM({ user, profile, onLogout }) {
               onAddRelation={(relation) => addRelation(relation)}
               onDeleteRelation={(id) => removeRelation(id)}
               allCompanies={companies}
+              customFieldDefs={customFieldDefs}
             />
           )}
 
@@ -1352,6 +1491,7 @@ export default function CRM({ user, profile, onLogout }) {
               costCatalog={costCatalog}
               reasonCatalog={reasonCatalog}
               orgSettings={orgSettings}
+              customFieldDefs={customFieldDefs}
             />
           )}
 
@@ -1413,6 +1553,7 @@ export default function CRM({ user, profile, onLogout }) {
               costCatalog={costCatalog}
               reasonCatalog={reasonCatalog}
               orgSettings={orgSettings}
+              customFieldDefs={customFieldDefs}
             />
           )}
 
@@ -1461,6 +1602,17 @@ export default function CRM({ user, profile, onLogout }) {
               costCatalog={costCatalog}
               onSaveCostCatalogItem={saveCostCatalogItem}
               onRemoveCostCatalogItem={removeCostCatalogItem}
+              deals={deals}
+              salesProcesses={salesProcesses}
+              onSaveSalesProcess={saveSalesProcess}
+              onRemoveSalesProcess={removeSalesProcess}
+              leadSources={leadSources}
+              onSaveLeadSource={saveLeadSource}
+              onRemoveLeadSource={removeLeadSource}
+              customFieldDefs={customFieldDefs}
+              onSaveCustomFieldDef={saveCustomFieldDef}
+              onRemoveCustomFieldDef={removeCustomFieldDef}
+              tasks={tasks}
             />
           )}
         </main>
@@ -1472,6 +1624,9 @@ export default function CRM({ user, profile, onLogout }) {
             canReassign={profile.role === "admin"}
             currentUserId={user.id}
             contactPositions={contactPositions}
+            leadSources={leadSources}
+            enableLeadSources={orgSettings.enableLeadSources !== false}
+            customFieldDefs={customFieldDefs.filter((d) => d.entityType === "company")}
             onClose={() => setShowCompanyForm(false)}
             onSave={async (company) => {
               const saved = await upsertCompany(company);
@@ -1487,6 +1642,7 @@ export default function CRM({ user, profile, onLogout }) {
             companyId={dealFormCompanyId}
             currentUserId={user.id}
             defaultVisibility={orgSettings.defaultDealVisibility}
+            customFieldDefs={customFieldDefs.filter((d) => d.entityType === "deal")}
             onClose={() => setShowDealForm(false)}
             onSave={async (deal) => {
               const saved = await upsertDeal(deal);
@@ -1883,6 +2039,7 @@ function CompaniesList({
 function CompanyDetail({
   company, deals, activities, relations, companiesById, staffName, onBack, onEdit, onDelete,
   onAddActivity, onDeleteActivity, onUpdateCompany, onOpenDeal, onAddDeal, onAddRelation, onDeleteRelation, allCompanies,
+  customFieldDefs = [],
 }) {
   const [newActivityType, setNewActivityType] = useState("note");
   const [newActivityTitle, setNewActivityTitle] = useState("");
@@ -1946,6 +2103,8 @@ function CompanyDetail({
               <div style={{ fontSize: 13.5, marginTop: 4, lineHeight: 1.5 }}>{company.notes}</div>
             </div>
           )}
+
+          <CustomFieldsDisplay definitions={customFieldDefs.filter((d) => d.entityType === "company")} values={company.customFields || {}} />
         </section>
 
         <section style={{ ...S.card, flex: 1 }}>
@@ -2234,7 +2393,7 @@ function DealDetail({
   deal, company, tasks, products, costs, activities, onBack, onEdit, onDelete, onUpdateDeal,
   onAddTask, onToggleTask, onDeleteTask, onAddProduct, onDeleteProduct, onAddCost, onDeleteCost,
   onOpenCompany, showCompanyLink, taskTemplates, onApplyTemplate,
-  productCatalog = [], costCatalog = [], reasonCatalog = [], orgSettings,
+  productCatalog = [], costCatalog = [], reasonCatalog = [], orgSettings, customFieldDefs = [],
 }) {
   const [newTaskType, setNewTaskType] = useState("call");
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -2363,6 +2522,8 @@ function DealDetail({
               <div style={{ fontSize: 13.5, marginTop: 4, lineHeight: 1.5 }}>{deal.notes}</div>
             </div>
           )}
+
+          <CustomFieldsDisplay definitions={customFieldDefs.filter((d) => d.entityType === "deal")} values={deal.customFields || {}} />
         </section>
 
         <section style={{ ...S.card, flex: 1 }}>
@@ -2446,7 +2607,7 @@ function DealDetail({
 
           <form onSubmit={submitTask} style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
             <select value={newTaskType} onChange={(e) => setNewTaskType(e.target.value)} style={S.select}>
-              {Object.entries(TASK_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              {taskTypeEntries(orgSettings && orgSettings.sortTaskTypesByPopularity, tasks).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
             <input
               value={newTaskTitle}
@@ -2994,10 +3155,14 @@ function CalendarView({ tasks, onOpenDeal }) {
 }
 
 /* ---------- Company form modal (z wyszukiwaniem NIP) ---------- */
-function CompanyFormModal({ initial, staff = [], canReassign = false, currentUserId, contactPositions = [], onClose, onSave }) {
+function CompanyFormModal({
+  initial, staff = [], canReassign = false, currentUserId, contactPositions = [],
+  leadSources = [], enableLeadSources = true, customFieldDefs = [], onClose, onSave,
+}) {
   const [form, setForm] = useState(() => initial || {
     id: null, name: "", phone: "", email: "", address: "", nip: "",
-    notes: "", contactPerson: "", contactPosition: "", source: "", tags: [], pinnedNote: "", ownerId: currentUserId,
+    notes: "", contactPerson: "", contactPosition: "", source: "", tags: [], pinnedNote: "",
+    customFields: {}, ownerId: currentUserId,
   });
   const [saving, setSaving] = useState(false);
   const [nipLoading, setNipLoading] = useState(false);
@@ -3073,13 +3238,15 @@ function CompanyFormModal({ initial, staff = [], canReassign = false, currentUse
               {contactPositions.map((p) => <option key={p.id} value={p.name} />)}
             </datalist>
           </div>
-          <div>
-            <label style={S.label}>Źródło pozyskania</label>
-            <select value={form.source} onChange={(e) => set("source", e.target.value)} style={S.input}>
-              <option value="">— wybierz —</option>
-              {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
+          {enableLeadSources && (
+            <div>
+              <label style={S.label}>Źródło pozyskania</label>
+              <select value={form.source} onChange={(e) => set("source", e.target.value)} style={S.input}>
+                <option value="">— wybierz —</option>
+                {(leadSources.length > 0 ? leadSources.map((s) => s.name) : LEAD_SOURCES).map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          )}
           {canReassign && staff.length > 0 && (
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={S.label}>Opiekun</label>
@@ -3106,6 +3273,15 @@ function CompanyFormModal({ initial, staff = [], canReassign = false, currentUse
             <label style={S.label}>Notatki</label>
             <textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={3} style={{ ...S.input, resize: "vertical" }} />
           </div>
+          {customFieldDefs.length > 0 && (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <CustomFieldsEditor
+                definitions={customFieldDefs}
+                values={form.customFields || {}}
+                onChange={(customFields) => set("customFields", customFields)}
+              />
+            </div>
+          )}
           <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
             <button type="button" onClick={onClose} style={S.secondaryBtn}>Anuluj</button>
             <button type="submit" disabled={saving} style={S.primaryBtn}>{saving ? "Zapisywanie…" : "Zapisz firmę"}</button>
@@ -3116,12 +3292,64 @@ function CompanyFormModal({ initial, staff = [], canReassign = false, currentUse
   );
 }
 
+/* ---------- Generyczny edytor pól dodatkowych (Ustawienia CRM -> Formularze) ---------- */
+function CustomFieldsEditor({ definitions, values, onChange }) {
+  function setValue(id, v) {
+    onChange({ ...values, [id]: v });
+  }
+
+  return (
+    <div>
+      <label style={S.label}>Pola dodatkowe</label>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 6 }}>
+        {definitions.map((def) => {
+          const val = values[def.id];
+          if (def.fieldType === "checkbox") {
+            return (
+              <label key={def.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                <Toggle checked={!!val} onChange={(v) => setValue(def.id, v)} /> {def.name}
+              </label>
+            );
+          }
+          return (
+            <div key={def.id}>
+              <label style={{ ...S.label, fontWeight: 500, textTransform: "none", fontSize: 12 }}>{def.name}</label>
+              <input
+                value={val || ""}
+                onChange={(e) => setValue(def.id, e.target.value)}
+                type={def.fieldType === "number" ? "number" : def.fieldType === "date" ? "date" : "text"}
+                style={S.input}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CustomFieldsDisplay({ definitions, values }) {
+  if (!definitions || definitions.length === 0) return null;
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E7E5E2" }}>
+      <div style={S.label}>Pola dodatkowe</div>
+      <div style={{ ...S.detailGrid, marginTop: 6 }}>
+        {definitions.map((def) => {
+          const raw = (values || {})[def.id];
+          const display = def.fieldType === "checkbox" ? (raw ? "Tak" : "Nie") : (raw || "—");
+          return <DetailRow key={def.id} icon={Tag} label={def.name} value={display} />;
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Deal form modal (szansa sprzedaży) ---------- */
-function DealFormModal({ initial, companyId, currentUserId, defaultVisibility = "Publiczna", onClose, onSave }) {
+function DealFormModal({ initial, companyId, currentUserId, defaultVisibility = "Publiczna", customFieldDefs = [], onClose, onSave }) {
   const [form, setForm] = useState(() => initial || {
     id: null, companyId, name: "", carInterest: "", budget: "", financing: FINANCING[0],
     decisionDate: "", status: "otwarta", purchaseType: "", visibility: defaultVisibility, notes: "",
-    ownerId: currentUserId,
+    customFields: {}, ownerId: currentUserId,
   });
   const [saving, setSaving] = useState(false);
 
@@ -3182,6 +3410,15 @@ function DealFormModal({ initial, companyId, currentUserId, defaultVisibility = 
             <label style={S.label}>Notatki</label>
             <textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={3} style={{ ...S.input, resize: "vertical" }} />
           </div>
+          {customFieldDefs.length > 0 && (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <CustomFieldsEditor
+                definitions={customFieldDefs}
+                values={form.customFields || {}}
+                onChange={(customFields) => set("customFields", customFields)}
+              />
+            </div>
+          )}
           <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
             <button type="button" onClick={onClose} style={S.secondaryBtn}>Anuluj</button>
             <button type="submit" disabled={saving} style={S.primaryBtn}>{saving ? "Zapisywanie…" : "Zapisz szansę sprzedaży"}</button>
@@ -3505,6 +3742,14 @@ const ORG_SETTINGS_SECTIONS = [
   { key: "orgPermissions", label: "Uprawnienia" },
   { key: "orgContacts", label: "Kontakty" },
   { key: "orgDeals", label: "Szanse sprzedaży" },
+  { key: "orgProcesses", label: "Procesy sprzedażowe" },
+  { key: "orgImportExport", label: "Import i eksport" },
+  { key: "orgLeadSources", label: "Źródła pozyskania" },
+  { key: "orgTasks", label: "Kalendarz i zadania" },
+  { key: "orgEmail", label: "Konta e-mail" },
+  { key: "orgForms", label: "Formularze" },
+  { key: "orgFiles", label: "Pliki" },
+  { key: "orgPlugins", label: "Wtyczki" },
 ];
 
 function SettingsPanel({
@@ -3514,6 +3759,9 @@ function SettingsPanel({
   reasonCatalog, onSaveReasonCatalogItem, onRemoveReasonCatalogItem,
   productCatalog, onSaveProductCatalogItem, onRemoveProductCatalogItem,
   costCatalog, onSaveCostCatalogItem, onRemoveCostCatalogItem,
+  deals, salesProcesses, onSaveSalesProcess, onRemoveSalesProcess,
+  leadSources, onSaveLeadSource, onRemoveLeadSource,
+  customFieldDefs, onSaveCustomFieldDef, onRemoveCustomFieldDef, tasks,
 }) {
   const [section, setSection] = useState("profile");
   const isAdmin = profile.role === "admin";
@@ -3589,6 +3837,28 @@ function SettingsPanel({
             onRemoveCostCatalogItem={onRemoveCostCatalogItem}
           />
         )}
+        {section === "orgProcesses" && isAdmin && (
+          <OrgProcessesSettingsPanel salesProcesses={salesProcesses} onSaveSalesProcess={onSaveSalesProcess} onRemoveSalesProcess={onRemoveSalesProcess} />
+        )}
+        {section === "orgImportExport" && isAdmin && <OrgImportExportSettingsPanel companies={companies} deals={deals} />}
+        {section === "orgLeadSources" && isAdmin && (
+          <OrgLeadSourcesSettingsPanel
+            orgSettings={orgSettings}
+            onUpdateOrgSettings={onUpdateOrgSettings}
+            leadSources={leadSources}
+            onSaveLeadSource={onSaveLeadSource}
+            onRemoveLeadSource={onRemoveLeadSource}
+          />
+        )}
+        {section === "orgTasks" && isAdmin && (
+          <OrgTasksSettingsPanel orgSettings={orgSettings} onUpdateOrgSettings={onUpdateOrgSettings} tasks={tasks} />
+        )}
+        {section === "orgEmail" && isAdmin && <EmailAccountsPlaceholderPanel />}
+        {section === "orgForms" && isAdmin && (
+          <OrgFormsSettingsPanel customFieldDefs={customFieldDefs} onSaveCustomFieldDef={onSaveCustomFieldDef} onRemoveCustomFieldDef={onRemoveCustomFieldDef} />
+        )}
+        {section === "orgFiles" && isAdmin && <FilesPlaceholderPanel />}
+        {section === "orgPlugins" && isAdmin && <PluginsPlaceholderPanel />}
         {section === "team" && isAdmin && <TeamGoalsSettingsPanel user={user} goals={goals} onUpdateGoals={onUpdateGoals} />}
       </div>
     </div>
@@ -4061,6 +4331,60 @@ function ImportSettingsPanel({ currentUserId, importHistory, onImportDone }) {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Eksport (Import i eksport -> Eksport) ---------- */
+function csvEscape(v) {
+  const s = v === null || v === undefined ? "" : String(v);
+  return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function downloadCsv(filename, headerRow, rows) {
+  const csv = [headerRow, ...rows].map((r) => r.map(csvEscape).join(";")).join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function ExportSettingsPanel({ companies, deals }) {
+  function exportCompanies() {
+    const header = ["Nazwa", "Telefon", "E-mail", "Adres", "NIP", "Osoba kontaktowa", "Stanowisko", "Źródło", "Tagi"];
+    const rows = companies.map((c) => [
+      c.name, c.phone, c.email, c.address, c.nip, c.contactPerson, c.contactPosition, c.source, (c.tags || []).join(","),
+    ]);
+    downloadCsv(`firmy_${companies.length}.csv`, header, rows);
+  }
+
+  function exportDeals() {
+    const header = ["Nazwa szansy", "Firma", "Model / auto", "Budżet", "Status", "Widoczność", "Decyzja do", "Powód"];
+    const companiesById = {};
+    companies.forEach((c) => { companiesById[c.id] = c; });
+    const rows = deals.map((d) => [
+      d.name, companiesById[d.companyId] ? companiesById[d.companyId].name : "", d.carInterest, d.budget,
+      d.status, d.visibility, d.decisionDate, d.status === "wygrana" ? d.winReason : d.lossReason,
+    ]);
+    downloadCsv(`szanse_sprzedazy_${deals.length}.csv`, header, rows);
+  }
+
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>Eksport</div>
+      <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+        Pobierz bieżącą bazę jako plik CSV (rozdzielany średnikiem, zgodny z Excel PL) — np. do kopii zapasowej
+        albo dalszej analizy poza CRM.
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button onClick={exportCompanies} style={S.primaryBtn}><Download size={14} /> Eksportuj firmy ({companies.length})</button>
+        <button onClick={exportDeals} style={S.secondaryBtn}><Download size={14} /> Eksportuj szanse sprzedaży ({deals.length})</button>
       </div>
     </div>
   );
@@ -4855,6 +5179,270 @@ function ReasonCatalogSettingsPanel({ reasonCatalog, onSaveReasonCatalogItem, on
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Procesy sprzedażowe ---------- */
+function OrgProcessesSettingsPanel({ salesProcesses, onSaveSalesProcess, onRemoveSalesProcess }) {
+  const [form, setForm] = useState({ name: "", lengthDays: "30" });
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setSaving(true);
+    await onSaveSalesProcess({ name: form.name.trim(), lengthDays: form.lengthDays, active: true, isDefault: salesProcesses.length === 0 });
+    setForm({ name: "", lengthDays: "30" });
+    setSaving(false);
+  }
+
+  return (
+    <div style={S.stack}>
+      <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5 }}>
+        Procesy sprzedażowe poniżej to dane konfiguracyjne (nazwa, docelowa długość w dniach, aktywność).
+        Same kroki procesu widoczne w karcie szansy sprzedaży (Ofertowanie / Procesowanie wniosku / Finalizacja)
+        są na razie wspólne dla wszystkich szans — możliwość zdefiniowania osobnych kroków dla każdego procesu
+        to większa zmiana, zaplanowana na kolejną aktualizację.
+      </div>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Procesy sprzedażowe</div>
+        <form onSubmit={submit} style={{ display: "flex", gap: 8, marginTop: 12, marginBottom: 14 }}>
+          <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Nazwa procesu" style={{ ...S.input, flex: 2 }} />
+          <input value={form.lengthDays} onChange={(e) => setForm((f) => ({ ...f, lengthDays: e.target.value }))} type="number" placeholder="Długość (dni)" style={{ ...S.input, flex: 1 }} />
+          <button type="submit" disabled={saving} style={S.primaryBtn}><Plus size={14} /> Dodaj</button>
+        </form>
+        {salesProcesses.length === 0 ? (
+          <EmptyNote text="Brak zdefiniowanych procesów." />
+        ) : (
+          <div>
+            <div style={S.tableHeader}>
+              <span style={{ flex: 2 }}>Nazwa</span>
+              <span style={{ flex: 1 }}>Długość</span>
+              <span style={{ flex: 1 }}>Aktywny</span>
+              <span style={{ flex: 1 }}>Domyślny</span>
+              <span style={{ flex: 0.6 }}></span>
+            </div>
+            {salesProcesses.map((p) => (
+              <div key={p.id} style={S.tableRow}>
+                <span style={{ flex: 2, textAlign: "left", fontWeight: 700, fontSize: 13 }}>{p.name}</span>
+                <span style={{ flex: 1, textAlign: "left", fontSize: 12.5 }}>{p.lengthDays} dni</span>
+                <span style={{ flex: 1, textAlign: "left" }}>
+                  <Toggle checked={p.active} onChange={(v) => onSaveSalesProcess({ ...p, active: v })} />
+                </span>
+                <span style={{ flex: 1, textAlign: "left" }}>
+                  <Toggle checked={p.isDefault} onChange={(v) => onSaveSalesProcess({ ...p, isDefault: v })} />
+                </span>
+                <span style={{ flex: 0.6, textAlign: "left" }}>
+                  <button onClick={() => onRemoveSalesProcess(p.id)} className="iconBtn" style={S.iconBtnStyle}><X size={14} color="#9A9A9A" /></button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Import i eksport ---------- */
+function OrgImportExportSettingsPanel({ companies, deals }) {
+  const [subTab, setSubTab] = useState("export");
+  return (
+    <div style={S.stack}>
+      <SubTabs tabs={[{ key: "import", label: "Import" }, { key: "export", label: "Eksport" }]} active={subTab} onChange={setSubTab} />
+      {subTab === "import" && (
+        <div style={S.card}>
+          <div style={S.cardTitle}>Import</div>
+          <div style={{ fontSize: 12.5, color: "#6B6B6B", marginTop: 8, lineHeight: 1.5 }}>
+            Import kontaktów z pliku CSV znajdziesz w Twoich osobistych Ustawieniach → zakładka „Import" —
+            działa tak samo niezależnie od tego, kto go uruchamia, więc nie duplikujemy go tutaj.
+          </div>
+        </div>
+      )}
+      {subTab === "export" && <ExportSettingsPanel companies={companies} deals={deals} />}
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Źródła pozyskania ---------- */
+function OrgLeadSourcesSettingsPanel({ orgSettings, onUpdateOrgSettings, leadSources, onSaveLeadSource, onRemoveLeadSource }) {
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    await onSaveLeadSource({ name: name.trim() });
+    setName("");
+    setSaving(false);
+  }
+
+  return (
+    <div style={S.stack}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Źródła pozyskania</div>
+        <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 14 }}>
+          Lista podpowiadana w formularzu firmy, pole „Źródło pozyskania".
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13, marginBottom: 16 }}>
+          <Toggle checked={orgSettings.enableLeadSources !== false} onChange={(v) => onUpdateOrgSettings({ enableLeadSources: v })} />
+          Włącz obsługę źródeł pozyskania (pokazuj pole w formularzu firmy)
+        </label>
+        <form onSubmit={submit} style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="np. Otomoto" style={{ ...S.input, flex: 1 }} />
+          <button type="submit" disabled={saving} style={S.primaryBtn}><Plus size={14} /> Dodaj</button>
+        </form>
+        {leadSources.length === 0 ? (
+          <EmptyNote text="Brak zdefiniowanych źródeł." />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {leadSources.map((s) => (
+              <div key={s.id} style={S.urgentRow}>
+                <div style={{ flex: 1, fontSize: 13 }}>{s.name}</div>
+                <button onClick={() => onRemoveLeadSource(s.id)} className="iconBtn" style={S.iconBtnStyle}><X size={14} color="#9A9A9A" /></button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Kalendarz i zadania ---------- */
+function OrgTasksSettingsPanel({ orgSettings, onUpdateOrgSettings, tasks }) {
+  return (
+    <div style={S.stack}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Typy zadań</div>
+        <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+          Typy zadań (Telefon, E-mail, Spotkanie, Przypomnienie) są wbudowane w CRM wraz z ikonami i nie da się
+          ich na razie edytować z poziomu ustawień. Poniższy przełącznik decyduje o kolejności typów w liście
+          wyboru przy dodawaniu zadania w karcie szansy sprzedaży.
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+          <Toggle
+            checked={!!orgSettings.sortTaskTypesByPopularity}
+            onChange={(v) => onUpdateOrgSettings({ sortTaskTypesByPopularity: v })}
+          />
+          Sortuj typy zadań wg popularności (najczęściej używane na górze listy)
+        </label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 16 }}>
+          {taskTypeEntries(orgSettings.sortTaskTypesByPopularity, tasks).map(([k, v]) => {
+            const Icon = v.icon;
+            const count = tasks.filter((t) => t.type === k).length;
+            return (
+              <div key={k} style={S.urgentRow}>
+                <Icon size={14} color="#6B6B6B" />
+                <div style={{ flex: 1, fontSize: 13 }}>{v.label}</div>
+                <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{count} zadań</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Statusy zadań</div>
+        <div style={{ fontSize: 12.5, color: "#6B6B6B", marginTop: 8, lineHeight: 1.5 }}>
+          Zadania w tym CRM mają prosty model „zrobione / niezrobione" zamiast wielu konfigurowalnych
+          statusów — zamiana na pełny, konfigurowalny model statusów to osobna, większa zmiana, nie
+          zbudowana w tej turze.
+        </div>
+      </div>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Szablony zadań</div>
+        <div style={{ fontSize: 12.5, color: "#6B6B6B", marginTop: 8, lineHeight: 1.5 }}>
+          Szablony zadań (checklisty stosowane do szansy sprzedaży jednym kliknięciem) znajdziesz w Twoich
+          osobistych Ustawieniach → zakładka „Kalendarz i zadania".
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Formularze ---------- */
+const CUSTOM_FIELD_ENTITY_TYPES = [
+  { key: "company", label: "Firmy" },
+  { key: "deal", label: "Szanse sprzedaży" },
+];
+const CUSTOM_FIELD_TYPES = [
+  { key: "text", label: "Pole tekstowe" },
+  { key: "number", label: "Dane liczbowe" },
+  { key: "date", label: "Data" },
+  { key: "checkbox", label: "Pole zaznaczenia" },
+];
+
+function OrgFormsSettingsPanel({ customFieldDefs, onSaveCustomFieldDef, onRemoveCustomFieldDef }) {
+  const [entityType, setEntityType] = useState("company");
+  const [form, setForm] = useState({ name: "", fieldType: "text" });
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setSaving(true);
+    await onSaveCustomFieldDef({ entityType, name: form.name.trim(), fieldType: form.fieldType });
+    setForm({ name: "", fieldType: "text" });
+    setSaving(false);
+  }
+
+  const filtered = customFieldDefs.filter((d) => d.entityType === entityType);
+
+  return (
+    <div style={S.stack}>
+      <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5 }}>
+        Pola dodatkowe działają na razie dla Firm i Szans sprzedaży (widoczne w ich formularzach i kartach
+        szczegółów). Osoby, Produkty, Koszty, Pojazdy, Adresy, Zadania, Użytkownicy i Zgody marketingowe —
+        z zakładek „Osoby / Produkty / Koszty / Pojazdy / Adresy…" w Livespace — nie mają jeszcze własnych pól
+        dodatkowych. Zakładki „Adresy" (wiele adresów na kontakt) i „Numerowanie" (autonumeracja dokumentów) też
+        nie są jeszcze zbudowane.
+      </div>
+      <SubTabs tabs={CUSTOM_FIELD_ENTITY_TYPES} active={entityType} onChange={setEntityType} />
+      <div style={S.card}>
+        <div style={S.cardTitle}>Pola dodatkowe — {CUSTOM_FIELD_ENTITY_TYPES.find((t) => t.key === entityType)?.label}</div>
+        <form onSubmit={submit} style={{ display: "flex", gap: 8, marginTop: 12, marginBottom: 14, flexWrap: "wrap" }}>
+          <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Nazwa pola" style={{ ...S.input, flex: 2, minWidth: 140 }} />
+          <select value={form.fieldType} onChange={(e) => setForm((f) => ({ ...f, fieldType: e.target.value }))} style={{ ...S.select, flex: 1 }}>
+            {CUSTOM_FIELD_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+          </select>
+          <button type="submit" disabled={saving} style={S.primaryBtn}><Plus size={14} /> Dodaj pole</button>
+        </form>
+        {filtered.length === 0 ? (
+          <EmptyNote text="Brak pól dodatkowych." />
+        ) : (
+          <div>
+            <div style={S.tableHeader}>
+              <span style={{ flex: 2 }}>Nazwa</span>
+              <span style={{ flex: 1 }}>Typ</span>
+            </div>
+            {filtered.map((d) => (
+              <div key={d.id} style={S.tableRow}>
+                <span style={{ flex: 2, textAlign: "left", fontWeight: 700, fontSize: 13 }}>{d.name}</span>
+                <span style={{ flex: 1, textAlign: "left", fontSize: 12.5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  {CUSTOM_FIELD_TYPES.find((t) => t.key === d.fieldType)?.label || d.fieldType}
+                  <button onClick={() => onRemoveCustomFieldDef(d.id)} className="iconBtn" style={S.iconBtnStyle}><X size={14} color="#9A9A9A" /></button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Wtyczki (placeholder) ---------- */
+function PluginsPlaceholderPanel() {
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>Wtyczki</div>
+      <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginTop: 12, lineHeight: 1.5 }}>
+        Wtyczki (osadzanie widoków z zewnętrznych aplikacji — stanów magazynowych, kalendarza spotkań, kalkulatorów
+        ofert — bezpośrednio w karcie szansy sprzedaży) wymagają osobnego frameworku integracyjnego (bezpieczne
+        osadzanie zewnętrznych stron, autoryzacja per-wtyczka). Nie jest to jeszcze zbudowane w tym CRM.
+      </div>
     </div>
   );
 }
