@@ -52,6 +52,9 @@ const TASK_TYPES = {
 
 const LEAD_SOURCES = ["Telefon", "Formularz WWW", "Polecenie", "Media społecznościowe", "Salon / wizyta", "Inne"];
 
+const VISIBILITY_OPTIONS = ["Publiczna", "Prywatna"];
+const PURCHASE_TYPES = ["Zakup gotówkowy", "Kredyt", "Leasing", "Wykup z leasingu", "Zamiana"];
+
 const STATUS_PROBABILITY = {
   nowy: 10,
   kontakt: 30,
@@ -59,6 +62,73 @@ const STATUS_PROBABILITY = {
   sprzedane: 100,
   utracony: 0,
 };
+
+/* ---------- Proces sprzedaży: etapy odznaczane po kolei ----------
+   Etap "dane" jest liczony automatycznie na podstawie wypełnionych pól.
+   Kolejne etapy są odznaczane ręcznie i tylko w kolejności — nie da się
+   zaznaczyć kroku, dopóki wszystkie wcześniejsze (włącznie z etapem "dane")
+   nie są zaznaczone. Stan zapisywany jest w kliencie: pipelineSteps.
+-------------------------------------------------------------------*/
+const PIPELINE_STAGES = [
+  {
+    key: "dane",
+    label: "Kompletowanie danych",
+    auto: true,
+    steps: [
+      { key: "dane_kontakt", label: "Uzupełniono dane kontaktowe", check: (c) => !!(c.phone && c.email) },
+      { key: "dane_nip", label: "Uzupełniono NIP", check: (c) => !!c.nip },
+      { key: "dane_budzet", label: "Uzupełniono budżet na nowy pojazd", check: (c) => !!c.budget },
+      { key: "dane_finansowanie", label: "Określono formę finansowania pojazdu", check: (c) => !!c.financing },
+    ],
+  },
+  {
+    key: "ofertowanie",
+    label: "Ofertowanie",
+    steps: [
+      { key: "oferta_przygotowana", label: "Przygotowano ofertę" },
+      { key: "oferta_wyslana", label: "Wysłano ofertę do klienta" },
+      { key: "oferta_potwierdzona", label: "Klient potwierdził zainteresowanie ofertą" },
+    ],
+  },
+  {
+    key: "procesowanie",
+    label: "Procesowanie wniosku",
+    steps: [
+      { key: "wniosek_zlozony", label: "Złożono wniosek o finansowanie" },
+      { key: "wniosek_zaakceptowany", label: "Wniosek zaakceptowany" },
+      { key: "umowa_podpisana", label: "Podpisano umowę" },
+    ],
+  },
+  {
+    key: "finalizacja",
+    label: "Finalizacja",
+    steps: [
+      { key: "pojazd_przygotowany", label: "Pojazd przygotowany do wydania" },
+      { key: "faktura_wystawiona", label: "Faktura wystawiona" },
+      { key: "pojazd_wydany", label: "Pojazd wydany klientowi" },
+    ],
+  },
+];
+
+const PIPELINE_FLAT_ORDER = PIPELINE_STAGES.flatMap((stage) =>
+  stage.steps.map((s) => ({ key: s.key, auto: !!stage.auto }))
+);
+
+function computePipeline(client) {
+  let previousDone = true;
+  const stages = PIPELINE_STAGES.map((stage) => {
+    const steps = stage.steps.map((step) => {
+      const done = stage.auto ? step.check(client) : !!(client.pipelineSteps && client.pipelineSteps[step.key]);
+      const unlocked = stage.auto ? true : previousDone;
+      previousDone = previousDone && done;
+      return { ...step, done, unlocked };
+    });
+    return { ...stage, steps, done: steps.every((s) => s.done) };
+  });
+  const flatSteps = stages.flatMap((s) => s.steps);
+  const donePct = Math.round((flatSteps.filter((s) => s.done).length / flatSteps.length) * 100);
+  return { stages, donePct };
+}
 
 function daysLeftInMonth() {
   const now = new Date();
@@ -115,6 +185,11 @@ function clientFromDb(row) {
     tags: Array.isArray(row.tags) ? row.tags : [],
     pinnedNote: row.pinned_note || "",
     statusChangedAt: row.status_changed_at || row.created_at,
+    visibility: row.visibility || "Publiczna",
+    purchaseType: row.purchase_type || "",
+    pipelineSteps: row.pipeline_steps || {},
+    winReason: row.win_reason || "",
+    lossReason: row.loss_reason || "",
   };
 }
 function clientToDb(c, fallbackOwnerId) {
@@ -127,6 +202,11 @@ function clientToDb(c, fallbackOwnerId) {
     source: c.source || null,
     tags: Array.isArray(c.tags) && c.tags.length ? c.tags : null,
     pinned_note: c.pinnedNote || null,
+    visibility: c.visibility || "Publiczna",
+    purchase_type: c.purchaseType || null,
+    pipeline_steps: c.pipelineSteps || {},
+    win_reason: c.winReason || null,
+    loss_reason: c.lossReason || null,
   };
 }
 function taskFromDb(row) {
@@ -155,6 +235,42 @@ function activityFromDb(row) {
 function activityToDb(a, ownerId) {
   return {
     client_id: a.clientId, type: a.type, title: a.title, body: a.body, owner_id: ownerId,
+  };
+}
+function productFromDb(row) {
+  return {
+    id: row.id, clientId: row.client_id, ownerId: row.owner_id,
+    name: row.name, quantity: row.quantity, unitPrice: row.unit_price, createdAt: row.created_at,
+  };
+}
+function productToDb(p, ownerId) {
+  return {
+    client_id: p.clientId, name: p.name,
+    quantity: p.quantity ? Number(p.quantity) : 1,
+    unit_price: p.unitPrice ? Number(p.unitPrice) : 0,
+    owner_id: ownerId,
+  };
+}
+function costFromDb(row) {
+  return {
+    id: row.id, clientId: row.client_id, ownerId: row.owner_id,
+    name: row.name, amount: row.amount, createdAt: row.created_at,
+  };
+}
+function costToDb(c, ownerId) {
+  return {
+    client_id: c.clientId, name: c.name, amount: c.amount ? Number(c.amount) : 0, owner_id: ownerId,
+  };
+}
+function relationFromDb(row) {
+  return {
+    id: row.id, clientId: row.client_id, relatedClientId: row.related_client_id,
+    ownerId: row.owner_id, note: row.note || "", createdAt: row.created_at,
+  };
+}
+function relationToDb(r, ownerId) {
+  return {
+    client_id: r.clientId, related_client_id: r.relatedClientId, note: r.note || null, owner_id: ownerId,
   };
 }
 
@@ -225,6 +341,9 @@ export default function CRM({ user, profile, onLogout }) {
   const [activities, setActivities] = useState([]);
   const [staff, setStaff] = useState([]);
   const [goals, setGoals] = useState({ contactsTarget: 10, dealsTarget: 5, valueTarget: 100000 });
+  const [products, setProducts] = useState([]);
+  const [costs, setCosts] = useState([]);
+  const [relations, setRelations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("dashboard");
   const [selectedClientId, setSelectedClientId] = useState(null);
@@ -247,6 +366,9 @@ export default function CRM({ user, profile, onLogout }) {
         activityRes,
         staffRes,
         goalsRes,
+        productRes,
+        costRes,
+        relationRes,
       ] = await Promise.all([
         supabase.from("clients").select("*").order("created_at", { ascending: false }),
         supabase.from("tasks").select("*").order("due_date", { ascending: true }),
@@ -254,6 +376,9 @@ export default function CRM({ user, profile, onLogout }) {
         supabase.from("client_activities").select("*").order("created_at", { ascending: false }),
         supabase.from("profiles").select("*"),
         supabase.from("goals").select("*").eq("id", 1).maybeSingle(),
+        supabase.from("client_products").select("*").order("created_at", { ascending: true }),
+        supabase.from("client_costs").select("*").order("created_at", { ascending: true }),
+        supabase.from("client_relations").select("*").order("created_at", { ascending: false }),
       ]);
       if (e1) throw e1;
       if (e2) throw e2;
@@ -261,10 +386,14 @@ export default function CRM({ user, profile, onLogout }) {
       setClients((clientRows || []).map(clientFromDb));
       setTasks((taskRows || []).map(taskFromDb));
       setVehicles((vehicleRows || []).map(vehicleFromDb));
-      // client_activities / profiles / goals to nowe tabele — jeśli migration.sql
-      // nie został jeszcze uruchomiony, ich błąd jest ignorowany i nie blokuje reszty CRM.
+      // client_activities / profiles / goals / client_products / client_costs /
+      // client_relations to nowe tabele — jeśli migration.sql nie został jeszcze
+      // uruchomiony, ich błąd jest ignorowany i nie blokuje reszty CRM.
       setActivities(activityRes.error ? [] : (activityRes.data || []).map(activityFromDb));
       setStaff(staffRes.error ? [] : (staffRes.data || []));
+      setProducts(productRes.error ? [] : (productRes.data || []).map(productFromDb));
+      setCosts(costRes.error ? [] : (costRes.data || []).map(costFromDb));
+      setRelations(relationRes.error ? [] : (relationRes.data || []).map(relationFromDb));
       if (!goalsRes.error && goalsRes.data) {
         setGoals({
           contactsTarget: goalsRes.data.contacts_target,
@@ -408,6 +537,72 @@ export default function CRM({ user, profile, onLogout }) {
     }
   }, []);
 
+  const addProduct = useCallback(async (product) => {
+    try {
+      const { data, error } = await supabase.from("client_products").insert(productToDb(product, user.id)).select().single();
+      if (error) throw error;
+      setProducts((prev) => [...prev, productFromDb(data)]);
+    } catch (e) {
+      setError("Nie udało się dodać produktu: " + (e.message || ""));
+    }
+  }, [user.id]);
+
+  const removeProduct = useCallback(async (id) => {
+    const prev = products;
+    setProducts((p) => p.filter((x) => x.id !== id));
+    try {
+      const { error } = await supabase.from("client_products").delete().eq("id", id);
+      if (error) throw error;
+    } catch (e) {
+      setProducts(prev);
+      setError("Nie udało się usunąć produktu: " + (e.message || ""));
+    }
+  }, [products]);
+
+  const addCost = useCallback(async (cost) => {
+    try {
+      const { data, error } = await supabase.from("client_costs").insert(costToDb(cost, user.id)).select().single();
+      if (error) throw error;
+      setCosts((prev) => [...prev, costFromDb(data)]);
+    } catch (e) {
+      setError("Nie udało się dodać kosztu: " + (e.message || ""));
+    }
+  }, [user.id]);
+
+  const removeCost = useCallback(async (id) => {
+    const prev = costs;
+    setCosts((c) => c.filter((x) => x.id !== id));
+    try {
+      const { error } = await supabase.from("client_costs").delete().eq("id", id);
+      if (error) throw error;
+    } catch (e) {
+      setCosts(prev);
+      setError("Nie udało się usunąć kosztu: " + (e.message || ""));
+    }
+  }, [costs]);
+
+  const addRelation = useCallback(async (relation) => {
+    try {
+      const { data, error } = await supabase.from("client_relations").insert(relationToDb(relation, user.id)).select().single();
+      if (error) throw error;
+      setRelations((prev) => [relationFromDb(data), ...prev]);
+    } catch (e) {
+      setError("Nie udało się dodać powiązania: " + (e.message || ""));
+    }
+  }, [user.id]);
+
+  const removeRelation = useCallback(async (id) => {
+    const prev = relations;
+    setRelations((r) => r.filter((x) => x.id !== id));
+    try {
+      const { error } = await supabase.from("client_relations").delete().eq("id", id);
+      if (error) throw error;
+    } catch (e) {
+      setRelations(prev);
+      setError("Nie udało się usunąć powiązania: " + (e.message || ""));
+    }
+  }, [relations]);
+
   const filteredVehicles = useMemo(() => {
     return vehicles.filter((v) => vehicleStatusFilter === "all" || v.status === vehicleStatusFilter);
   }, [vehicles, vehicleStatusFilter]);
@@ -533,6 +728,10 @@ export default function CRM({ user, profile, onLogout }) {
               client={selectedClient}
               tasks={tasks.filter((t) => t.clientId === selectedClient.id)}
               activities={activities.filter((a) => a.clientId === selectedClient.id)}
+              products={products.filter((p) => p.clientId === selectedClient.id)}
+              costs={costs.filter((c) => c.clientId === selectedClient.id)}
+              relations={relations.filter((r) => r.clientId === selectedClient.id || r.relatedClientId === selectedClient.id)}
+              allClients={clients}
               staffName={staffNameById[selectedClient.ownerId] || "—"}
               onBack={() => setSelectedClientId(null)}
               onEdit={() => { setEditingClient(selectedClient); setShowClientForm(true); }}
@@ -543,6 +742,13 @@ export default function CRM({ user, profile, onLogout }) {
               onAddActivity={(activity) => addActivity(activity)}
               onDeleteActivity={(id) => removeActivity(id)}
               onUpdateClient={(patch) => upsertClient({ ...selectedClient, ...patch })}
+              onAddProduct={(p) => addProduct({ ...p, clientId: selectedClient.id })}
+              onRemoveProduct={(id) => removeProduct(id)}
+              onAddCost={(c) => addCost({ ...c, clientId: selectedClient.id })}
+              onRemoveCost={(id) => removeCost(id)}
+              onAddRelation={(r) => addRelation({ ...r, clientId: selectedClient.id })}
+              onRemoveRelation={(id) => removeRelation(id)}
+              onOpenClient={(id) => setSelectedClientId(id)}
             />
           )}
 
@@ -724,7 +930,62 @@ function Dashboard({ clients, tasks, goals, onOpenClient }) {
           </div>
         </section>
       </div>
+
+      <AssistantCard clients={clients} onOpenClient={onOpenClient} />
     </div>
+  );
+}
+
+function computeAssistantSuggestions(clients) {
+  const suggestions = [];
+  const wonMissingReason = clients.filter((c) => c.status === "sprzedane" && !c.winReason);
+  if (wonMissingReason.length > 0) {
+    suggestions.push({
+      key: "win_reason",
+      text: `Uzupełnij powody wygrania sprzedaży (${wonMissingReason.length})`,
+      clients: wonMissingReason,
+    });
+  }
+  const lostMissingReason = clients.filter((c) => c.status === "utracony" && !c.lossReason);
+  if (lostMissingReason.length > 0) {
+    suggestions.push({
+      key: "loss_reason",
+      text: `Uzupełnij powody przegrania sprzedaży (${lostMissingReason.length})`,
+      clients: lostMissingReason,
+    });
+  }
+  const missingContact = clients.filter(
+    (c) => c.status !== "sprzedane" && c.status !== "utracony" && !c.contactPerson
+  );
+  if (missingContact.length > 0) {
+    suggestions.push({
+      key: "contact_person",
+      text: `Ustal osoby kontaktowe u swoich klientów (${missingContact.length})`,
+      clients: missingContact,
+    });
+  }
+  return suggestions;
+}
+
+function AssistantCard({ clients, onOpenClient }) {
+  const [dismissed, setDismissed] = useState([]);
+  const suggestions = computeAssistantSuggestions(clients).filter((s) => !dismissed.includes(s.key));
+  if (suggestions.length === 0) return null;
+  return (
+    <section style={S.card}>
+      <h3 style={S.cardTitle}>Asystent</h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+        {suggestions.map((s) => (
+          <div key={s.key} style={{ ...S.urgentRow, alignItems: "center" }}>
+            <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{s.text}</div>
+            <button onClick={() => onOpenClient(s.clients[0].id)} style={S.secondaryBtn}>Zrób to!</button>
+            <button onClick={() => setDismissed((d) => [...d, s.key])} style={{ background: "none", border: "none", display: "flex" }}>
+              <X size={14} color="#9A9A9A" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -819,7 +1080,11 @@ function ClientsList({ clients, search, setSearch, statusFilter, setStatusFilter
 }
 
 /* ---------- Client detail ---------- */
-function ClientDetail({ client, tasks, activities, staffName, onBack, onEdit, onDelete, onAddTask, onToggleTask, onDeleteTask, onAddActivity, onDeleteActivity, onUpdateClient }) {
+function ClientDetail({
+  client, tasks, activities, products, costs, relations, allClients, staffName,
+  onBack, onEdit, onDelete, onAddTask, onToggleTask, onDeleteTask, onAddActivity, onDeleteActivity, onUpdateClient,
+  onAddProduct, onRemoveProduct, onAddCost, onRemoveCost, onAddRelation, onRemoveRelation, onOpenClient,
+}) {
   const [newTaskType, setNewTaskType] = useState("call");
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDate, setNewTaskDate] = useState("");
@@ -859,15 +1124,6 @@ function ClientDetail({ client, tasks, activities, staffName, onBack, onEdit, on
   }
 
   const probability = STATUS_PROBABILITY[client.status] ?? 0;
-  const checklist = [
-    { label: "Dane kontaktowe uzupełnione", done: !!(client.phone && client.email) },
-    { label: "NIP uzupełniony", done: !!client.nip },
-    { label: "Osoba kontaktowa uzupełniona", done: !!client.contactPerson },
-    { label: "Źródło pozyskania uzupełnione", done: !!client.source },
-    { label: "Budżet uzupełniony", done: !!client.budget },
-    { label: "Forma finansowania określona", done: !!client.financing },
-  ];
-  const completePct = Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100);
 
   return (
     <div style={S.stack}>
@@ -1014,20 +1270,304 @@ function ClientDetail({ client, tasks, activities, staffName, onBack, onEdit, on
           </div>
 
           <div style={{ marginTop: 22 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B6B6B", fontWeight: 600, marginBottom: 8 }}>
-              <span>Kompletowanie danych</span>
-              <span style={{ color: "#111111", fontWeight: 700 }}>{completePct}%</span>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {checklist.map((c) => (
-                <div key={c.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
-                  {c.done ? <CheckCircle2 size={15} color="#1C8A4B" /> : <Circle size={15} color="#B7B5B1" />}
-                  <span style={{ color: c.done ? "#111111" : "#9A9A9A" }}>{c.label}</span>
-                </div>
-              ))}
-            </div>
+            <SalesProcessCard key={client.id} client={client} onUpdateClient={onUpdateClient} />
           </div>
         </section>
+      </div>
+
+      <div style={S.twoCol}>
+        <section style={{ ...S.card, flex: 1.3 }}>
+          <h3 style={S.cardTitle}>Produkty i koszty</h3>
+          <div style={{ marginTop: 12 }}>
+            <ProductsCostsCard
+              products={products}
+              costs={costs}
+              onAddProduct={onAddProduct}
+              onRemoveProduct={onRemoveProduct}
+              onAddCost={onAddCost}
+              onRemoveCost={onRemoveCost}
+            />
+          </div>
+        </section>
+
+        <section style={{ ...S.card, flex: 1 }}>
+          <h3 style={S.cardTitle}>Powiązania</h3>
+          <div style={{ marginTop: 12 }}>
+            <RelationsCard
+              relations={relations}
+              client={client}
+              allClients={allClients}
+              onAddRelation={onAddRelation}
+              onRemoveRelation={onRemoveRelation}
+              onOpenClient={onOpenClient}
+            />
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Produkty / Koszty / Zysk / Marża ---------- */
+function ProductsCostsCard({ products, costs, onAddProduct, onRemoveProduct, onAddCost, onRemoveCost }) {
+  const [tab, setTab] = useState("produkty");
+  const [prodName, setProdName] = useState("");
+  const [prodQty, setProdQty] = useState("1");
+  const [prodPrice, setProdPrice] = useState("");
+  const [costName, setCostName] = useState("");
+  const [costAmount, setCostAmount] = useState("");
+
+  const revenue = products.reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unitPrice) || 0), 0);
+  const totalCosts = costs.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const profit = revenue - totalCosts;
+  const margin = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
+
+  function submitProduct(e) {
+    e.preventDefault();
+    if (!prodName.trim()) return;
+    onAddProduct({ name: prodName.trim(), quantity: Number(prodQty) || 1, unitPrice: Number(prodPrice) || 0 });
+    setProdName(""); setProdQty("1"); setProdPrice("");
+  }
+  function submitCost(e) {
+    e.preventDefault();
+    if (!costName.trim()) return;
+    onAddCost({ name: costName.trim(), amount: Number(costAmount) || 0 });
+    setCostName(""); setCostAmount("");
+  }
+
+  const TABS = [
+    { key: "produkty", label: "Produkty" },
+    { key: "koszty", label: "Koszty" },
+    { key: "zysk", label: "Zysk" },
+    { key: "marza", label: "Marża" },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            style={{
+              padding: "6px 12px", borderRadius: 8, border: "none", fontSize: 12, fontWeight: 700,
+              background: tab === t.key ? "#111111" : "#F0EFEC", color: tab === t.key ? "#fff" : "#111111",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "produkty" && (
+        <div>
+          <form onSubmit={submitProduct} style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+            <input value={prodName} onChange={(e) => setProdName(e.target.value)} placeholder="Nazwa produktu" style={{ ...S.input, flex: 2, minWidth: 140 }} />
+            <input value={prodQty} onChange={(e) => setProdQty(e.target.value)} type="number" placeholder="Ilość" style={{ ...S.input, width: 80 }} />
+            <input value={prodPrice} onChange={(e) => setProdPrice(e.target.value)} type="number" placeholder="Cena (zł)" style={{ ...S.input, width: 110 }} />
+            <button type="submit" style={S.primaryBtn}><Plus size={14} /></button>
+          </form>
+          {products.length === 0 && <EmptyNote text="Brak dodanych produktów." />}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {products.map((p) => (
+              <div key={p.id} style={S.urgentRow}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: "#9A9A9A" }}>{p.quantity} × {Number(p.unitPrice).toLocaleString("pl-PL")} zł</div>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{(p.quantity * p.unitPrice).toLocaleString("pl-PL")} zł</div>
+                <button onClick={() => onRemoveProduct(p.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab === "koszty" && (
+        <div>
+          <form onSubmit={submitCost} style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+            <input value={costName} onChange={(e) => setCostName(e.target.value)} placeholder="Nazwa kosztu" style={{ ...S.input, flex: 2, minWidth: 140 }} />
+            <input value={costAmount} onChange={(e) => setCostAmount(e.target.value)} type="number" placeholder="Kwota (zł)" style={{ ...S.input, width: 110 }} />
+            <button type="submit" style={S.primaryBtn}><Plus size={14} /></button>
+          </form>
+          {costs.length === 0 && <EmptyNote text="Brak dodanych kosztów." />}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {costs.map((c) => (
+              <div key={c.id} style={S.urgentRow}>
+                <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{c.name}</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{Number(c.amount).toLocaleString("pl-PL")} zł</div>
+                <button onClick={() => onRemoveCost(c.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab === "zysk" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+            <span>Przychód (produkty)</span><strong>{revenue.toLocaleString("pl-PL")} zł</strong>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+            <span>Koszty</span><strong>{totalCosts.toLocaleString("pl-PL")} zł</strong>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, paddingTop: 8, borderTop: "1px solid #E7E5E2" }}>
+            <span style={{ fontWeight: 700 }}>Zysk</span>
+            <strong style={{ color: profit >= 0 ? "#1C8A4B" : "#E4241B" }}>{profit.toLocaleString("pl-PL")} zł</strong>
+          </div>
+        </div>
+      )}
+
+      {tab === "marza" && (
+        <div>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 36, fontWeight: 600, color: margin >= 0 ? "#1C8A4B" : "#E4241B" }}>{margin}%</div>
+          <div style={{ fontSize: 12, color: "#9A9A9A", marginTop: 4 }}>Marża liczona jako zysk / przychód z produktów.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Powiązania między klientami ---------- */
+function RelationsCard({ relations, client, allClients, onAddRelation, onRemoveRelation, onOpenClient }) {
+  const [picking, setPicking] = useState(false);
+  const [targetId, setTargetId] = useState("");
+  const [note, setNote] = useState("");
+
+  const otherClients = allClients.filter((c) => c.id !== client.id);
+
+  function submit(e) {
+    e.preventDefault();
+    if (!targetId) return;
+    onAddRelation({ relatedClientId: targetId, note: note.trim() });
+    setTargetId(""); setNote(""); setPicking(false);
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {relations.length === 0 && !picking && <EmptyNote text="Brak powiązanych klientów." />}
+        {relations.map((r) => {
+          const otherId = r.clientId === client.id ? r.relatedClientId : r.clientId;
+          const other = allClients.find((c) => c.id === otherId);
+          return (
+            <div key={r.id} style={S.urgentRow}>
+              <button onClick={() => onOpenClient(otherId)} style={{ flex: 1, background: "none", border: "none", textAlign: "left" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#E4241B" }}>{other ? other.name : "—"}</div>
+                {r.note && <div style={{ fontSize: 11, color: "#9A9A9A" }}>{r.note}</div>}
+              </button>
+              <button onClick={() => onRemoveRelation(r.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+            </div>
+          );
+        })}
+      </div>
+
+      {picking ? (
+        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+          <select value={targetId} onChange={(e) => setTargetId(e.target.value)} style={S.select}>
+            <option value="">— wybierz klienta —</option>
+            {otherClients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Notatka (opcjonalnie)" style={S.input} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" onClick={() => setPicking(false)} style={S.secondaryBtn}>Anuluj</button>
+            <button type="submit" style={S.primaryBtn}>Połącz</button>
+          </div>
+        </form>
+      ) : (
+        <button type="button" onClick={() => setPicking(true)} style={{ ...S.secondaryBtn, marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Plus size={13} /> Dodaj powiązanie
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Sekwencyjny proces sprzedaży (odznaczanie krokami po kolei) ---------- */
+function SalesProcessCard({ client, onUpdateClient }) {
+  const pipeline = computePipeline(client);
+  const [expandedKey, setExpandedKey] = useState(() => {
+    const firstOpen = pipeline.stages.find((s) => !s.done);
+    return (firstOpen || pipeline.stages[pipeline.stages.length - 1]).key;
+  });
+
+  function toggleStep(stepKey) {
+    const idx = PIPELINE_FLAT_ORDER.findIndex((s) => s.key === stepKey);
+    const current = !!(client.pipelineSteps && client.pipelineSteps[stepKey]);
+    const nextSteps = { ...(client.pipelineSteps || {}) };
+    if (!current) {
+      nextSteps[stepKey] = true;
+    } else {
+      // Odznaczenie kroku cofa też wszystkie kolejne — kolejność musi być zachowana.
+      for (let i = idx; i < PIPELINE_FLAT_ORDER.length; i++) {
+        const s = PIPELINE_FLAT_ORDER[i];
+        if (!s.auto) delete nextSteps[s.key];
+      }
+    }
+    onUpdateClient({ pipelineSteps: nextSteps });
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B6B6B", fontWeight: 600, marginBottom: 8 }}>
+        <span>Proces sprzedaży</span>
+        <span style={{ color: "#111111", fontWeight: 700 }}>{pipeline.donePct}%</span>
+      </div>
+      <div style={{ background: "#F0EFEC", borderRadius: 6, height: 8, overflow: "hidden", marginBottom: 14 }}>
+        <div style={{ width: `${pipeline.donePct}%`, background: pipeline.donePct >= 100 ? "#1C8A4B" : "#111111", height: "100%", borderRadius: 6 }} />
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {pipeline.stages.map((stage) => {
+          const isOpen = expandedKey === stage.key;
+          const doneCount = stage.steps.filter((s) => s.done).length;
+          return (
+            <div key={stage.key} style={{ border: "1px solid #F0EFEC", borderRadius: 8, overflow: "hidden" }}>
+              <button
+                type="button"
+                onClick={() => setExpandedKey(isOpen ? null : stage.key)}
+                style={{
+                  width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                  background: stage.done ? "#F3FBF6" : "#FAFAF9", border: "none", padding: "9px 12px",
+                }}
+              >
+                <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700 }}>
+                  {stage.done ? <CheckCircle2 size={14} color="#1C8A4B" /> : <Circle size={14} color="#B7B5B1" />}
+                  {stage.label}
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#9A9A9A", fontWeight: 600 }}>
+                  {doneCount}/{stage.steps.length}
+                  <ChevronRight size={13} style={{ transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                </span>
+              </button>
+              {isOpen && (
+                <div style={{ padding: "8px 12px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                  {stage.steps.map((step) => {
+                    const clickable = !stage.auto && (step.unlocked || step.done);
+                    return (
+                      <button
+                        key={step.key}
+                        type="button"
+                        onClick={() => clickable && toggleStep(step.key)}
+                        disabled={!clickable}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8, background: "none", border: "none",
+                          padding: 0, textAlign: "left",
+                          cursor: stage.auto ? "default" : clickable ? "pointer" : "not-allowed",
+                          opacity: !stage.auto && !step.unlocked && !step.done ? 0.45 : 1,
+                        }}
+                      >
+                        {step.done ? <CheckCircle2 size={16} color="#1C8A4B" /> : <Circle size={16} color="#B7B5B1" />}
+                        <span style={{ fontSize: 12.5, color: step.done ? "#111111" : "#4a4a4a" }}>{step.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1103,6 +1643,7 @@ function ClientFormModal({ initial, staff = [], canReassign = false, currentUser
     carInterest: "", budget: "", financing: FINANCING[0], decisionDate: "",
     status: "nowy", notes: "",
     contactPerson: "", source: "", tags: [], pinnedNote: "", ownerId: currentUserId,
+    visibility: "Publiczna", purchaseType: "", winReason: "", lossReason: "",
   });
   const [saving, setSaving] = useState(false);
   const [nipLoading, setNipLoading] = useState(false);
@@ -1187,12 +1728,47 @@ function ClientFormModal({ initial, staff = [], canReassign = false, currentUser
               {STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
             </select>
           </div>
+          <div>
+            <label style={S.label}>Rodzaj zakupu</label>
+            <select value={form.purchaseType} onChange={(e) => set("purchaseType", e.target.value)} style={S.input}>
+              <option value="">— wybierz —</option>
+              {PURCHASE_TYPES.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Widoczność</label>
+            <select value={form.visibility} onChange={(e) => set("visibility", e.target.value)} style={S.input}>
+              {VISIBILITY_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
           {canReassign && staff.length > 0 && (
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={S.label}>Opiekun</label>
               <select value={form.ownerId || ""} onChange={(e) => set("ownerId", e.target.value)} style={S.input}>
                 {staff.map((p) => <option key={p.id} value={p.id}>{p.full_name || p.email || p.id}</option>)}
               </select>
+            </div>
+          )}
+          {form.status === "sprzedane" && (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={S.label}>Powód wygrania</label>
+              <input
+                value={form.winReason || ""}
+                onChange={(e) => set("winReason", e.target.value)}
+                style={S.input}
+                placeholder="np. Najlepsza cena, szybki termin dostawy"
+              />
+            </div>
+          )}
+          {form.status === "utracony" && (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={S.label}>Powód przegrania</label>
+              <input
+                value={form.lossReason || ""}
+                onChange={(e) => set("lossReason", e.target.value)}
+                style={S.input}
+                placeholder="np. Klient wybrał konkurencję, zbyt wysoka cena"
+              />
             </div>
           )}
           <div style={{ gridColumn: "1 / -1" }}>
