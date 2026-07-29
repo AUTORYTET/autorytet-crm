@@ -152,10 +152,53 @@ function daysLeftInMonth() {
   return Math.max(0, Math.round((end - now) / 86400000) + 1);
 }
 
+/* ---------- Ustawienia regionalne ----------
+   Format daty/godziny/kwot i pierwszy dzień tygodnia są ustawieniem osobistym
+   (Ustawienia -> Ustawienia regionalne). Ponieważ fmtDate/fmtMoney są zwykłymi
+   funkcjami wywoływanymi z bardzo wielu miejsc w tym pliku (nie komponentami),
+   trzymamy je jako mały, modułowy "singleton" zamiast przeciągać ustawienia
+   przez propsy wszystkich komponentów. CRM ładuje ustawienia usera przy starcie
+   i wywołuje applyRegionalSettings(...) — a ponowne wyrenderowanie wymuszane
+   jest przez klucz na <main> (patrz formatTick w komponencie CRM).
+   Strefa czasowa jest ustawieniem informacyjnym — CRM nie wykonuje konwersji
+   stref czasowych (wszystkie daty są traktowane jako lokalny czas przeglądarki).
+------------------------------------------------------------------*/
+let REGIONAL_SETTINGS = {
+  timezone: "Europe/Warsaw",
+  dateFormat: "d.m.Y",
+  timeFormat: "H:i",
+  firstDayOfWeek: "monday", // monday | sunday
+  decimalSymbol: ",",
+  thousandsSeparator: " ",
+  decimalPlaces: 0,
+  currencyFormat: "value_symbol", // value_symbol | symbol_value
+  currencySymbol: "zł",
+};
+
+function applyRegionalSettings(patch) {
+  REGIONAL_SETTINGS = { ...REGIONAL_SETTINGS, ...(patch || {}) };
+}
+
+function formatWithPattern(date, pattern) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const h24 = date.getHours();
+  const h12 = ((h24 + 11) % 12) + 1;
+  const map = {
+    Y: date.getFullYear(),
+    m: pad(date.getMonth() + 1),
+    d: pad(date.getDate()),
+    H: pad(h24),
+    h: pad(h12),
+    i: pad(date.getMinutes()),
+    A: h24 < 12 ? "AM" : "PM",
+  };
+  return pattern.replace(/Y|m|d|H|h|i|A/g, (tok) => (map[tok] !== undefined ? map[tok] : tok));
+}
+
 function fmtDate(d) {
   if (!d) return "—";
   try {
-    return new Date(d).toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric" });
+    return formatWithPattern(new Date(d), REGIONAL_SETTINGS.dateFormat);
   } catch {
     return d;
   }
@@ -164,7 +207,7 @@ function fmtDate(d) {
 function fmtDateTime(d) {
   if (!d) return "—";
   try {
-    return new Date(d).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    return formatWithPattern(new Date(d), REGIONAL_SETTINGS.dateFormat + " " + REGIONAL_SETTINGS.timeFormat);
   } catch {
     return d;
   }
@@ -186,15 +229,24 @@ function initials(name) {
 }
 
 function fmtMoney(n) {
-  return `${Number(n || 0).toLocaleString("pl-PL")} zł`;
+  const places = Number.isFinite(REGIONAL_SETTINGS.decimalPlaces) ? REGIONAL_SETTINGS.decimalPlaces : 0;
+  const num = Number(n || 0);
+  const fixed = num.toFixed(Math.max(0, places));
+  const [intPart, decPart] = fixed.split(".");
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, REGIONAL_SETTINGS.thousandsSeparator);
+  const numStr = decPart ? grouped + REGIONAL_SETTINGS.decimalSymbol + decPart : grouped;
+  return REGIONAL_SETTINGS.currencyFormat === "symbol_value"
+    ? `${REGIONAL_SETTINGS.currencySymbol} ${numStr}`
+    : `${numStr} ${REGIONAL_SETTINGS.currencySymbol}`;
 }
 
 /* ---------- Kalendarz: pomocnicze funkcje dat ---------- */
-function startOfWeekMonday(d) {
+function startOfWeek(d) {
   const dt = new Date(d);
-  const day = dt.getDay(); // 0 = niedziela
-  const diff = day === 0 ? -6 : 1 - day;
-  dt.setDate(dt.getDate() + diff);
+  const day = dt.getDay(); // 0 = niedziela .. 6 = sobota
+  const firstDay = REGIONAL_SETTINGS.firstDayOfWeek === "sunday" ? 0 : 1;
+  const diff = (day - firstDay + 7) % 7;
+  dt.setDate(dt.getDate() - diff);
   dt.setHours(0, 0, 0, 0);
   return dt;
 }
@@ -211,9 +263,15 @@ function isSameDay(a, b) {
   return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
 }
 
+function weekdayLabels() {
+  return REGIONAL_SETTINGS.firstDayOfWeek === "sunday"
+    ? ["Niedz", "Pon", "Wt", "Śr", "Czw", "Pt", "Sob"]
+    : ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Niedz"];
+}
+
 function monthMatrix(anchorDate) {
   const first = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
-  const gridStart = startOfWeekMonday(first);
+  const gridStart = startOfWeek(first);
   const weeks = [];
   let cursor = gridStart;
   for (let w = 0; w < 6; w++) {
@@ -362,6 +420,69 @@ function relationToDb(r, ownerId) {
   };
 }
 
+function profileSettingsFromDb(row) {
+  return {
+    id: row.id,
+    role: row.role,
+    fullName: row.full_name || "",
+    firstName: row.first_name || (row.full_name || "").split(" ")[0] || "",
+    lastName: row.last_name || (row.full_name || "").split(" ").slice(1).join(" ") || "",
+    email: row.email || "",
+    phone: row.phone || "",
+    position: row.position || "",
+    avatarUrl: row.avatar_url || "",
+  };
+}
+
+const DEFAULT_REGIONAL = {
+  timezone: "Europe/Warsaw",
+  dateFormat: "d.m.Y",
+  timeFormat: "H:i",
+  firstDayOfWeek: "monday",
+  decimalSymbol: ",",
+  thousandsSeparator: " ",
+  decimalPlaces: 0,
+  currencyFormat: "value_symbol",
+  currencySymbol: "zł",
+};
+
+const DEFAULT_NOTIFICATIONS = {
+  emailDigest: false,
+  dailyActivityReport: false,
+  inAppPopups: true,
+  importFinished: true,
+  contactNeedsData: true,
+  dealStatusChanged: true,
+  dealAutoClosed: true,
+  dealPastDeadline: true,
+  dealDueSoon: true,
+  becameOwner: true,
+  taskDateChanged: true,
+};
+
+function userSettingsFromDb(row) {
+  return {
+    regional: { ...DEFAULT_REGIONAL, ...(row && row.regional ? row.regional : {}) },
+    notifications: { ...DEFAULT_NOTIFICATIONS, ...(row && row.notifications ? row.notifications : {}) },
+  };
+}
+
+function taskTemplateFromDb(row) {
+  return { id: row.id, ownerId: row.owner_id, name: row.name, createdAt: row.created_at };
+}
+function templateItemFromDb(row) {
+  return {
+    id: row.id, templateId: row.template_id, type: row.type, title: row.title,
+    offsetDays: row.offset_days, sortOrder: row.sort_order,
+  };
+}
+function importHistoryFromDb(row) {
+  return {
+    id: row.id, ownerId: row.owner_id, filename: row.filename,
+    rowCount: row.row_count, status: row.status, createdAt: row.created_at,
+  };
+}
+
 function vehicleFromDb(row) {
   return {
     id: row.id,
@@ -460,6 +581,12 @@ export default function CRM({ user, profile, onLogout }) {
   const [dealShowFilter, setDealShowFilter] = useState("all");
   const [dealStatusFilter, setDealStatusFilter] = useState("all");
   const [error, setError] = useState(null);
+  const [taskTemplates, setTaskTemplates] = useState([]);
+  const [templateItems, setTemplateItems] = useState([]);
+  const [importHistory, setImportHistory] = useState([]);
+  const [regionalSettings, setRegionalSettings] = useState(DEFAULT_REGIONAL);
+  const [notificationSettings, setNotificationSettings] = useState(DEFAULT_NOTIFICATIONS);
+  const [formatTick, setFormatTick] = useState(0);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -473,6 +600,7 @@ export default function CRM({ user, profile, onLogout }) {
 
       const [
         dealsRes, taskRes, vehicleRes, activityRes, staffRes, goalsRes, productsRes, costsRes, relationsRes,
+        userSettingsRes, templatesRes, templateItemsRes, importHistoryRes,
       ] = await Promise.all([
         supabase.from("deals").select("*").order("created_at", { ascending: false }),
         supabase.from("tasks").select("*").order("due_date", { ascending: true }),
@@ -483,6 +611,10 @@ export default function CRM({ user, profile, onLogout }) {
         supabase.from("deal_products").select("*"),
         supabase.from("deal_costs").select("*"),
         supabase.from("company_relations").select("*"),
+        supabase.from("user_settings").select("*").eq("user_id", user.id).maybeSingle(),
+        supabase.from("task_templates").select("*").order("created_at", { ascending: false }),
+        supabase.from("task_template_items").select("*").order("sort_order", { ascending: true }),
+        supabase.from("import_history").select("*").order("created_at", { ascending: false }),
       ]);
       if (taskRes.error) throw taskRes.error;
       if (vehicleRes.error) throw vehicleRes.error;
@@ -496,6 +628,9 @@ export default function CRM({ user, profile, onLogout }) {
       setProducts(productsRes.error ? [] : (productsRes.data || []).map(productFromDb));
       setCosts(costsRes.error ? [] : (costsRes.data || []).map(costFromDb));
       setRelations(relationsRes.error ? [] : (relationsRes.data || []).map(relationFromDb));
+      setTaskTemplates(templatesRes.error ? [] : (templatesRes.data || []).map(taskTemplateFromDb));
+      setTemplateItems(templateItemsRes.error ? [] : (templateItemsRes.data || []).map(templateItemFromDb));
+      setImportHistory(importHistoryRes.error ? [] : (importHistoryRes.data || []).map(importHistoryFromDb));
       if (!goalsRes.error && goalsRes.data) {
         setGoals({
           contactsTarget: goalsRes.data.contacts_target,
@@ -503,6 +638,11 @@ export default function CRM({ user, profile, onLogout }) {
           valueTarget: goalsRes.data.value_target,
         });
       }
+      const loadedSettings = userSettingsFromDb(userSettingsRes.error ? null : userSettingsRes.data);
+      setRegionalSettings(loadedSettings.regional);
+      setNotificationSettings(loadedSettings.notifications);
+      applyRegionalSettings(loadedSettings.regional);
+      setFormatTick((n) => n + 1);
       if (dealsRes.error) {
         setError("Tabela szans sprzedaży (deals) nie istnieje jeszcze w bazie — uruchom migrację SQL (migration_v2_deals.sql), aby korzystać z nowych widoków.");
       }
@@ -511,7 +651,7 @@ export default function CRM({ user, profile, onLogout }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user.id]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -739,6 +879,76 @@ export default function CRM({ user, profile, onLogout }) {
     }
   }, []);
 
+  const updateUserSettings = useCallback(async (patch) => {
+    const nextRegional = { ...regionalSettings, ...(patch.regional || {}) };
+    const nextNotifications = { ...notificationSettings, ...(patch.notifications || {}) };
+    try {
+      const { error } = await supabase.from("user_settings").upsert({
+        user_id: user.id, regional: nextRegional, notifications: nextNotifications, updated_at: new Date().toISOString(),
+      });
+      if (error) throw error;
+      setRegionalSettings(nextRegional);
+      setNotificationSettings(nextNotifications);
+      applyRegionalSettings(nextRegional);
+      setFormatTick((n) => n + 1);
+      return true;
+    } catch (e) {
+      setError("Nie udało się zapisać ustawień: " + (e.message || ""));
+      return false;
+    }
+  }, [regionalSettings, notificationSettings, user.id]);
+
+  const saveTaskTemplate = useCallback(async (draft) => {
+    try {
+      let templateId = draft.id;
+      if (templateId) {
+        const { error } = await supabase.from("task_templates").update({ name: draft.name }).eq("id", templateId);
+        if (error) throw error;
+        await supabase.from("task_template_items").delete().eq("template_id", templateId);
+      } else {
+        const { data, error } = await supabase.from("task_templates").insert({ name: draft.name, owner_id: user.id }).select().single();
+        if (error) throw error;
+        templateId = data.id;
+      }
+      const itemsToInsert = (draft.items || []).map((it, idx) => ({
+        template_id: templateId, type: it.type, title: it.title,
+        offset_days: Number(it.offsetDays) || 0, sort_order: idx,
+      }));
+      if (itemsToInsert.length) {
+        const { error } = await supabase.from("task_template_items").insert(itemsToInsert);
+        if (error) throw error;
+      }
+      await reload();
+      return true;
+    } catch (e) {
+      setError("Nie udało się zapisać szablonu zadań: " + (e.message || ""));
+      return false;
+    }
+  }, [user.id, reload]);
+
+  const removeTaskTemplate = useCallback(async (id) => {
+    try {
+      const { error } = await supabase.from("task_templates").delete().eq("id", id);
+      if (error) throw error;
+      setTaskTemplates((prev) => prev.filter((t) => t.id !== id));
+      setTemplateItems((prev) => prev.filter((it) => it.templateId !== id));
+    } catch (e) {
+      setError("Nie udało się usunąć szablonu zadań: " + (e.message || ""));
+    }
+  }, []);
+
+  const applyTemplateToDeal = useCallback(async (templateId, deal) => {
+    const items = templateItems.filter((it) => it.templateId === templateId).sort((a, b) => a.sortOrder - b.sortOrder);
+    for (const it of items) {
+      const due = addDays(new Date(), it.offsetDays || 0);
+      await supabase.from("tasks").insert(taskToDb({
+        dealId: deal.id, clientId: deal.companyId, type: it.type, title: it.title,
+        dueDate: due.toISOString().slice(0, 10), done: false,
+      }, user.id));
+    }
+    await reload();
+  }, [templateItems, user.id, reload]);
+
   const filteredVehicles = useMemo(() => {
     return vehicles.filter((v) => vehicleStatusFilter === "all" || v.status === vehicleStatusFilter);
   }, [vehicles, vehicleStatusFilter]);
@@ -852,9 +1062,7 @@ export default function CRM({ user, profile, onLogout }) {
             <NavBtn active={tab === "deals"} onClick={() => { setTab("deals"); setSelectedDealId(null); }} icon={Handshake} label="Szanse sprzedaży" />
             <NavBtn active={tab === "vehicles"} onClick={() => setTab("vehicles")} icon={Car} label="Pojazdy" />
             <NavBtn active={tab === "stats"} onClick={() => setTab("stats")} icon={BarChart3} label="Statystyki" />
-            {profile.role === "admin" && (
-              <NavBtn active={tab === "settings"} onClick={() => setTab("settings")} icon={Settings} label="Ustawienia" />
-            )}
+            <NavBtn active={tab === "settings"} onClick={() => setTab("settings")} icon={Settings} label="Ustawienia" />
           </nav>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ textAlign: "right" }}>
@@ -879,7 +1087,7 @@ export default function CRM({ user, profile, onLogout }) {
           </div>
         )}
 
-        <main style={S.main}>
+        <main style={S.main} key={formatTick}>
           {tab === "dashboard" && (
             <Dashboard
               companies={companies}
@@ -951,6 +1159,8 @@ export default function CRM({ user, profile, onLogout }) {
               onDeleteProduct={(id) => removeProduct(id)}
               onAddCost={(c) => addCost(c)}
               onDeleteCost={(id) => removeCost(id)}
+              taskTemplates={taskTemplates}
+              onApplyTemplate={(templateId) => applyTemplateToDeal(templateId, selectedDeal)}
             />
           )}
 
@@ -1006,6 +1216,8 @@ export default function CRM({ user, profile, onLogout }) {
               onDeleteCost={(id) => removeCost(id)}
               onOpenCompany={openCompany}
               showCompanyLink
+              taskTemplates={taskTemplates}
+              onApplyTemplate={(templateId) => applyTemplateToDeal(templateId, selectedDeal)}
             />
           )}
 
@@ -1024,8 +1236,23 @@ export default function CRM({ user, profile, onLogout }) {
             <StatystykiView deals={deals} companiesById={companiesById} products={products} />
           )}
 
-          {tab === "settings" && profile.role === "admin" && (
-            <SettingsPanel user={user} goals={goals} onUpdateGoals={updateGoals} />
+          {tab === "settings" && (
+            <SettingsPanel
+              user={user}
+              profile={profile}
+              goals={goals}
+              onUpdateGoals={updateGoals}
+              regionalSettings={regionalSettings}
+              notificationSettings={notificationSettings}
+              onUpdateUserSettings={updateUserSettings}
+              taskTemplates={taskTemplates}
+              templateItems={templateItems}
+              onSaveTemplate={saveTaskTemplate}
+              onRemoveTemplate={removeTaskTemplate}
+              importHistory={importHistory}
+              onImportDone={reload}
+              companies={companies}
+            />
           )}
         </main>
 
@@ -1794,11 +2021,13 @@ function DealsList({
 function DealDetail({
   deal, company, tasks, products, costs, activities, onBack, onEdit, onDelete, onUpdateDeal,
   onAddTask, onToggleTask, onDeleteTask, onAddProduct, onDeleteProduct, onAddCost, onDeleteCost,
-  onOpenCompany, showCompanyLink,
+  onOpenCompany, showCompanyLink, taskTemplates, onApplyTemplate,
 }) {
   const [newTaskType, setNewTaskType] = useState("call");
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDate, setNewTaskDate] = useState("");
+  const [templateToApply, setTemplateToApply] = useState("");
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
   const [reasonDraft, setReasonDraft] = useState(deal.status === "wygrana" ? deal.winReason : deal.lossReason);
 
   useEffect(() => {
@@ -1952,6 +2181,29 @@ function DealDetail({
 
         <section style={{ ...S.card, flex: 1 }}>
           <h3 style={S.cardTitle}>Zadania</h3>
+
+          {taskTemplates && taskTemplates.length > 0 && (
+            <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+              <select value={templateToApply} onChange={(e) => setTemplateToApply(e.target.value)} style={{ ...S.select, flex: 1 }}>
+                <option value="">— zastosuj szablon zadań —</option>
+                {taskTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <button
+                type="button"
+                disabled={!templateToApply || applyingTemplate}
+                onClick={async () => {
+                  setApplyingTemplate(true);
+                  await onApplyTemplate(templateToApply);
+                  setTemplateToApply("");
+                  setApplyingTemplate(false);
+                }}
+                style={S.secondaryBtn}
+              >
+                {applyingTemplate ? "Dodawanie…" : "Zastosuj"}
+              </button>
+            </div>
+          )}
+
           <form onSubmit={submitTask} style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
             <select value={newTaskType} onChange={(e) => setNewTaskType(e.target.value)} style={S.select}>
               {Object.entries(TASK_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -2169,7 +2421,7 @@ function taskCategory(t) {
   if (days < 0) return "spoznione";
   if (days === 0) return "dzis";
   if (days === 1) return "jutro";
-  const weekStart = startOfWeekMonday(today);
+  const weekStart = startOfWeek(today);
   const thisWeekEnd = addDays(weekStart, 6);
   const nextWeekStart = addDays(weekStart, 7);
   const nextWeekEnd = addDays(weekStart, 13);
@@ -2335,7 +2587,6 @@ function StatystykiView({ deals, companiesById, products }) {
 }
 
 /* ---------- Kalendarz: widok miesiąca ---------- */
-const WEEKDAY_LABELS = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Niedz"];
 const MONTH_LABELS = [
   "Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec",
   "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień",
@@ -2402,7 +2653,7 @@ function CalendarView({ tasks, onOpenDeal }) {
       ) : (
         <div style={{ ...S.card, padding: 0, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: "1px solid #E7E5E2" }}>
-            {WEEKDAY_LABELS.map((d) => (
+            {weekdayLabels().map((d) => (
               <div key={d} style={{ padding: "10px 8px", fontSize: 11, fontWeight: 700, color: "#9A9A9A", textAlign: "center", textTransform: "uppercase" }}>{d}</div>
             ))}
           </div>
@@ -2940,10 +3191,762 @@ function VehicleFormModal({ initial, onClose, onSave }) {
 }
 
 /* ---------- Settings (Ustawienia) - admin only ---------- */
-function SettingsPanel({ user, goals, onUpdateGoals }) {
+/* ---------- Ustawienia: pełny panel w stylu Livespace ---------- */
+const SETTINGS_SECTIONS = [
+  { key: "profile", label: "Twoje dane" },
+  { key: "password", label: "Hasło" },
+  { key: "notifications", label: "Powiadomienia" },
+  { key: "email", label: "Konta e-mail" },
+  { key: "import", label: "Import" },
+  { key: "templates", label: "Kalendarz i zadania" },
+  { key: "files", label: "Pliki" },
+  { key: "regional", label: "Ustawienia regionalne" },
+];
+
+function SettingsPanel({
+  user, profile, goals, onUpdateGoals, regionalSettings, notificationSettings, onUpdateUserSettings,
+  taskTemplates, templateItems, onSaveTemplate, onRemoveTemplate, importHistory, onImportDone, companies,
+}) {
+  const [section, setSection] = useState("profile");
+  const isAdmin = profile.role === "admin";
+
+  return (
+    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
+      <aside style={{ width: 190, flexShrink: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {SETTINGS_SECTIONS.map((s) => (
+            <SidebarItem key={s.key} label={s.label} active={section === s.key} onClick={() => setSection(s.key)} />
+          ))}
+          {isAdmin && <SidebarItem label="Cele i zespół" active={section === "team"} onClick={() => setSection("team")} />}
+        </div>
+      </aside>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {section === "profile" && <ProfileSettingsPanel user={user} profile={profile} />}
+        {section === "password" && <PasswordSettingsPanel user={user} />}
+        {section === "notifications" && (
+          <NotificationsSettingsPanel notificationSettings={notificationSettings} onUpdateUserSettings={onUpdateUserSettings} />
+        )}
+        {section === "email" && <EmailAccountsPlaceholderPanel />}
+        {section === "import" && (
+          <ImportSettingsPanel currentUserId={user.id} importHistory={importHistory} onImportDone={onImportDone} companies={companies} />
+        )}
+        {section === "templates" && (
+          <TaskTemplatesSettingsPanel
+            taskTemplates={taskTemplates}
+            templateItems={templateItems}
+            onSaveTemplate={onSaveTemplate}
+            onRemoveTemplate={onRemoveTemplate}
+          />
+        )}
+        {section === "files" && <FilesPlaceholderPanel />}
+        {section === "regional" && (
+          <RegionalSettingsPanel regionalSettings={regionalSettings} onUpdateUserSettings={onUpdateUserSettings} />
+        )}
+        {section === "team" && isAdmin && <TeamGoalsSettingsPanel user={user} goals={goals} onUpdateGoals={onUpdateGoals} />}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Twoje dane ---------- */
+function ProfileSettingsPanel({ user, profile }) {
+  const [form, setForm] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const { data } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      if (!cancelled) {
+        setForm(profileSettingsFromDb(data || { id: user.id, email: profile.email, full_name: profile.name }));
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user.id]);
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    setMsg(null);
+    const fullName = `${form.firstName} ${form.lastName}`.trim();
+    const { error } = await supabase.from("profiles").update({
+      first_name: form.firstName || null, last_name: form.lastName || null, full_name: fullName || null,
+      phone: form.phone || null, position: form.position || null, avatar_url: form.avatarUrl || null,
+    }).eq("id", user.id);
+    setSaving(false);
+    setMsg(error ? "Nie udało się zapisać danych: " + error.message : "Zapisano.");
+  }
+
+  if (loading || !form) {
+    return <div style={S.card}><div style={{ fontSize: 13, color: "#9A9A9A" }}>Wczytywanie…</div></div>;
+  }
+
+  return (
+    <div style={S.stack}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Zdjęcie</div>
+        <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
+          Dodaj link do swojego zdjęcia, aby ułatwić rozpoznanie Cię w zespole.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {form.avatarUrl ? (
+            <img src={form.avatarUrl} alt="" style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover" }} />
+          ) : (
+            <CompanyAvatar name={`${form.firstName} ${form.lastName}`.trim() || "?"} size={64} />
+          )}
+          <div style={{ flex: 1, display: "flex", gap: 8 }}>
+            <input
+              value={form.avatarUrl}
+              onChange={(e) => setForm((f) => ({ ...f, avatarUrl: e.target.value }))}
+              placeholder="Link do zdjęcia (URL)"
+              style={{ ...S.input, flex: 1 }}
+            />
+            <button type="button" onClick={() => setForm((f) => ({ ...f, avatarUrl: "" }))} style={S.secondaryBtn}>Usuń</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <div style={S.cardTitle}>Informacje o Tobie</div>
+        <form onSubmit={save} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 16 }}>
+          <Field label="Imię" value={form.firstName} onChange={(v) => setForm((f) => ({ ...f, firstName: v }))} />
+          <Field label="Nazwisko" value={form.lastName} onChange={(v) => setForm((f) => ({ ...f, lastName: v }))} />
+          <div>
+            <label style={S.label}>Login / e-mail</label>
+            <input value={form.email || user.email || ""} disabled style={{ ...S.input, background: "#F3F3F1", color: "#9A9A9A" }} />
+          </div>
+          <Field label="Telefon" value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
+          <Field label="Stanowisko" value={form.position} onChange={(v) => setForm((f) => ({ ...f, position: v }))} />
+          <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
+            {msg && <span style={{ fontSize: 12, color: msg.startsWith("Nie") ? "#E4241B" : "#1C8A4B" }}>{msg}</span>}
+            <button type="submit" disabled={saving} style={S.primaryBtn}>{saving ? "Zapisywanie…" : "Zapisz"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Hasło ---------- */
+function PasswordSettingsPanel({ user }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  async function submit(e) {
+    e.preventDefault();
+    setMsg(null);
+    if (next.length < 8 || !/[a-z]/.test(next) || !/[A-Z]/.test(next) || !/[0-9]/.test(next) || !/[^A-Za-z0-9]/.test(next)) {
+      setMsg("Nowe hasło powinno mieć min. 8 znaków, małą i wielką literę, cyfrę oraz znak specjalny.");
+      return;
+    }
+    if (next !== repeat) {
+      setMsg("Nowe hasła nie są identyczne.");
+      return;
+    }
+    setSaving(true);
+    try {
+      if (user.email && current) {
+        const { error: reauthError } = await supabase.auth.signInWithPassword({ email: user.email, password: current });
+        if (reauthError) throw new Error("Aktualne hasło jest nieprawidłowe.");
+      }
+      const { error } = await supabase.auth.updateUser({ password: next });
+      if (error) throw error;
+      setMsg("Hasło zostało zmienione.");
+      setCurrent(""); setNext(""); setRepeat("");
+    } catch (e) {
+      setMsg(e.message || "Nie udało się zmienić hasła.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>Hasło</div>
+      <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+        Hasło zabezpiecza dostęp do Twojego konta i danych w CRM. Powinno składać się z przynajmniej ośmiu
+        znaków, w tym małej i wielkiej litery, cyfry oraz znaku specjalnego.
+      </div>
+      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 360 }}>
+        <Field label="Aktualne hasło" value={current} onChange={setCurrent} type="password" />
+        <Field label="Nowe hasło" value={next} onChange={setNext} type="password" />
+        <Field label="Powtórz nowe hasło" value={repeat} onChange={setRepeat} type="password" />
+        {msg && <div style={{ fontSize: 12, color: msg.includes("zmienione") ? "#1C8A4B" : "#E4241B" }}>{msg}</div>}
+        <button type="submit" disabled={saving} style={{ ...S.primaryBtn, alignSelf: "flex-start" }}>{saving ? "Zmienianie…" : "Zmień hasło"}</button>
+      </form>
+    </div>
+  );
+}
+
+/* ---------- Powiadomienia (tylko preferencje) ---------- */
+const NOTIFICATION_TOGGLES = [
+  { key: "emailDigest", label: "Chcę otrzymywać również mailowe powiadomienia" },
+  { key: "dailyActivityReport", label: "Chcę otrzymywać mailowe raporty aktywności (wysyłane codziennie rano)" },
+  { key: "inAppPopups", label: "Pokazuj wyskakujące powiadomienia w aplikacji" },
+];
+const NOTIFICATION_EVENT_TOGGLES = [
+  { key: "importFinished", label: "Zostanie zakończony import kontaktów" },
+  { key: "contactNeedsData", label: "Zostanie dodany kontakt wymagający uzupełnienia danych" },
+  { key: "dealStatusChanged", label: "Szansa sprzedaży, której jestem uczestnikiem, zmieni status" },
+  { key: "dealAutoClosed", label: "Szansa sprzedaży, której jestem opiekunem, zostanie automatycznie zamknięta" },
+  { key: "dealPastDeadline", label: "Szansa sprzedaży, której jestem opiekunem, przekroczy datę finalizacji" },
+  { key: "dealDueSoon", label: "W szansie sprzedaży, której jestem opiekunem, pozostanie 7 dni do daty finalizacji" },
+  { key: "becameOwner", label: "Zostanę opiekunem nowych kontaktów lub szans sprzedaży" },
+  { key: "taskDateChanged", label: "Zostanie zmieniony termin zadania, którego jestem uczestnikiem" },
+];
+
+function Toggle({ checked, onChange }) {
+  return (
+    <button type="button" onClick={() => onChange(!checked)} style={{
+      width: 38, height: 21, borderRadius: 11, border: "none", position: "relative",
+      background: checked ? "#111111" : "#E7E5E2", transition: "background .15s", flexShrink: 0, padding: 0,
+    }}>
+      <span style={{
+        position: "absolute", top: 2, left: checked ? 19 : 2, width: 17, height: 17, borderRadius: "50%",
+        background: "#fff", transition: "left .15s", boxShadow: "0 1px 2px rgba(0,0,0,0.3)",
+      }} />
+    </button>
+  );
+}
+
+function NotificationsSettingsPanel({ notificationSettings, onUpdateUserSettings }) {
+  const [prefs, setPrefs] = useState(notificationSettings);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setPrefs(notificationSettings); }, [notificationSettings]);
+
+  function toggle(key) {
+    setPrefs((p) => ({ ...p, [key]: !p[key] }));
+  }
+
+  async function save() {
+    setSaving(true);
+    await onUpdateUserSettings({ notifications: prefs });
+    setSaving(false);
+  }
+
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>Powiadomienia</div>
+      <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginTop: 12, marginBottom: 16, lineHeight: 1.5 }}>
+        Poniższe przełączniki zapisują Twoje preferencje w bazie danych. CRM nie wysyła jeszcze faktycznych
+        e-maili ani powiadomień push — to wymaga podłączenia serwera pocztowego i pojawi się w kolejnej aktualizacji.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {NOTIFICATION_TOGGLES.map((t) => (
+          <label key={t.key} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+            <Toggle checked={!!prefs[t.key]} onChange={() => toggle(t.key)} /> {t.label}
+          </label>
+        ))}
+      </div>
+      <div style={{ ...S.label, marginTop: 20, marginBottom: 8 }}>Wysyłaj powiadomienia gdy:</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {NOTIFICATION_EVENT_TOGGLES.map((t) => (
+          <label key={t.key} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+            <Toggle checked={!!prefs[t.key]} onChange={() => toggle(t.key)} /> {t.label}
+          </label>
+        ))}
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+        <button onClick={save} disabled={saving} style={S.primaryBtn}>{saving ? "Zapisywanie…" : "Zapisz"}</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Konta e-mail (makieta — wymaga integracji zewnętrznych) ---------- */
+function EmailAccountsPlaceholderPanel() {
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>Konta e-mail</div>
+      <div style={{ fontSize: 13, color: "#4a4a4a", marginTop: 12, marginBottom: 16, lineHeight: 1.6 }}>
+        Skonfiguruj konta pocztowe, aby mieć bezpośredni wgląd do komunikacji prowadzonej z klientami z poziomu CRM.
+      </div>
+      <div style={{ background: "#F3F3F1", border: "1px solid #E7E5E2", borderRadius: 8, padding: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button disabled style={{ ...S.secondaryBtn, opacity: 0.5, cursor: "not-allowed" }}>Dodaj konto IMAP</button>
+        <button disabled style={{ ...S.secondaryBtn, opacity: 0.5, cursor: "not-allowed" }}>Zaloguj przez Google</button>
+        <button disabled style={{ ...S.secondaryBtn, opacity: 0.5, cursor: "not-allowed" }}>Zaloguj przez Microsoft</button>
+      </div>
+      <div style={{ fontSize: 12, color: "#9A9A9A", marginTop: 12, lineHeight: 1.5 }}>
+        Wkrótce — połączenie ze skrzynką pocztową wymaga zarejestrowanych aplikacji OAuth Google/Microsoft
+        oraz osobnego serwera obsługującego pocztę, których nie da się tu podłączyć bez Twoich danych dostępowych do tych usług.
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Pliki (makieta — wymaga silnika szablonów dokumentów) ---------- */
+function FilesPlaceholderPanel() {
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>Szablony plików</div>
+      <div style={{ fontSize: 13, color: "#4a4a4a", marginTop: 12, marginBottom: 16, lineHeight: 1.6 }}>
+        Szablony plików pozwalają na automatyczne tworzenie dokumentów (np. ofert czy zamówień) wypełnionych
+        danymi firmy i szansy sprzedaży.
+      </div>
+      <div style={{ fontSize: 12, color: "#9A9A9A", lineHeight: 1.5 }}>
+        Wkrótce — automatyczne wypełnianie dokumentów danymi wymaga osobnego silnika generowania plików,
+        którego nie da się tu podłączyć bez dodatkowej infrastruktury. Na razie ta zakładka jest pusta.
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Import kontaktów (CSV/XLS -> firmy) ---------- */
+function randomId() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; }
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === "," || c === ";") {
+      row.push(field); field = "";
+    } else if (c === "\n") {
+      row.push(field); rows.push(row); row = []; field = "";
+    } else if (c === "\r") {
+      // pomiń
+    } else {
+      field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((cell) => (cell || "").trim() !== ""));
+}
+
+const IMPORT_FIELD_ALIASES = {
+  name: ["nazwa", "imię i nazwisko", "firma", "name", "klient"],
+  phone: ["telefon", "phone", "tel"],
+  email: ["e-mail", "email", "mail"],
+  address: ["adres", "address"],
+  nip: ["nip"],
+  contactPerson: ["osoba kontaktowa", "kontakt", "contact"],
+  source: ["źródło", "zrodlo", "source"],
+  tags: ["tagi", "tags", "grupy"],
+};
+const IMPORT_FIELD_LABELS = [
+  ["name", "Nazwa *"], ["phone", "Telefon"], ["email", "E-mail"], ["address", "Adres"],
+  ["nip", "NIP"], ["contactPerson", "Osoba kontaktowa"], ["source", "Źródło"], ["tags", "Tagi (rozdzielone ;)"],
+];
+
+function guessImportMapping(headers) {
+  const norm = (s) => (s || "").toString().trim().toLowerCase();
+  const mapping = {};
+  Object.entries(IMPORT_FIELD_ALIASES).forEach(([field, aliases]) => {
+    mapping[field] = headers.findIndex((h) => aliases.includes(norm(h)));
+  });
+  return mapping;
+}
+
+function ImportSettingsPanel({ currentUserId, importHistory, onImportDone }) {
+  const [headers, setHeaders] = useState([]);
+  const [rows, setRows] = useState([]);
+  const [mapping, setMapping] = useState({});
+  const [filename, setFilename] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  function handleFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setFilename(file.name);
+    setMsg(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const parsed = parseCSV(String(reader.result || ""));
+      if (parsed.length < 2) {
+        setMsg("Plik nie zawiera danych do zaimportowania.");
+        return;
+      }
+      const [head, ...body] = parsed;
+      setHeaders(head);
+      setRows(body);
+      setMapping(guessImportMapping(head));
+    };
+    reader.readAsText(file, "UTF-8");
+  }
+
+  async function runImport() {
+    if (mapping.name === undefined || mapping.name < 0) {
+      setMsg("Wskaż kolumnę z nazwą firmy / klienta.");
+      return;
+    }
+    setImporting(true);
+    setMsg(null);
+    const batchId = randomId();
+    const toInsert = rows
+      .filter((r) => (r[mapping.name] || "").trim())
+      .map((r) => ({
+        name: (r[mapping.name] || "").trim(),
+        phone: mapping.phone >= 0 ? (r[mapping.phone] || "").trim() || null : null,
+        email: mapping.email >= 0 ? (r[mapping.email] || "").trim() || null : null,
+        address: mapping.address >= 0 ? (r[mapping.address] || "").trim() || null : null,
+        nip: mapping.nip >= 0 ? (r[mapping.nip] || "").trim() || null : null,
+        contact_person: mapping.contactPerson >= 0 ? (r[mapping.contactPerson] || "").trim() || null : null,
+        source: mapping.source >= 0 ? (r[mapping.source] || "").trim() || null : null,
+        tags: mapping.tags >= 0 && r[mapping.tags] ? r[mapping.tags].split(";").map((t) => t.trim()).filter(Boolean) : null,
+        owner_id: currentUserId,
+        import_batch_id: batchId,
+      }));
+    try {
+      if (toInsert.length === 0) throw new Error("Brak wierszy do zaimportowania.");
+      const { error } = await supabase.from("companies").insert(toInsert);
+      if (error) throw error;
+      const { error: histError } = await supabase.from("import_history").insert({
+        id: batchId, owner_id: currentUserId, filename, row_count: toInsert.length, status: "ok",
+      });
+      if (histError) throw histError;
+      setMsg(`Zaimportowano ${toInsert.length} firm.`);
+      setHeaders([]); setRows([]); setFilename("");
+      onImportDone();
+    } catch (e) {
+      setMsg("Błąd importu: " + (e.message || ""));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function undo(historyId) {
+    if (!window.confirm("Cofnąć ten import? Usunie to wszystkie firmy dodane w tej paczce.")) return;
+    await supabase.from("companies").delete().eq("import_batch_id", historyId);
+    await supabase.from("import_history").update({ status: "wycofano" }).eq("id", historyId);
+    onImportDone();
+  }
+
+  return (
+    <div style={S.stack}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Import kontaktów</div>
+        <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+          Zaimportuj bazę firm / kontaktów z pliku CSV (np. wyeksportowanego z Excela). Pierwszy wiersz pliku
+          powinien zawierać nagłówki kolumn.
+        </div>
+        <input type="file" accept=".csv,text/csv" onChange={handleFile} style={{ fontSize: 13 }} />
+
+        {headers.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ ...S.label, marginBottom: 8 }}>Dopasuj kolumny</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
+              {IMPORT_FIELD_LABELS.map(([field, label]) => (
+                <div key={field}>
+                  <label style={S.label}>{label}</label>
+                  <select
+                    value={mapping[field] !== undefined ? mapping[field] : -1}
+                    onChange={(e) => setMapping((m) => ({ ...m, [field]: Number(e.target.value) }))}
+                    style={S.select}
+                  >
+                    <option value={-1}>— pomiń —</option>
+                    {headers.map((h, i) => <option key={i} value={i}>{h}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 14, ...S.label }}>Podgląd (pierwsze 5 wierszy z {rows.length})</div>
+            <div style={{ overflowX: "auto", marginTop: 6 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr>{headers.map((h, i) => <th key={i} style={{ textAlign: "left", padding: "4px 8px", borderBottom: "1px solid #E7E5E2", color: "#9A9A9A" }}>{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0, 5).map((r, ri) => (
+                    <tr key={ri}>{r.map((c, ci) => <td key={ci} style={{ padding: "4px 8px", borderBottom: "1px solid #F0EFEC" }}>{c}</td>)}</tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button onClick={runImport} disabled={importing} style={S.primaryBtn}>
+                {importing ? "Importowanie…" : `Zaimportuj ${rows.length} wierszy`}
+              </button>
+            </div>
+          </div>
+        )}
+        {msg && <div style={{ fontSize: 12.5, color: msg.startsWith("Błąd") ? "#E4241B" : "#1C8A4B", marginTop: 12 }}>{msg}</div>}
+      </div>
+
+      <div style={S.card}>
+        <div style={S.cardTitle}>Historia importu</div>
+        {importHistory.length === 0 ? (
+          <EmptyNote text="Nie zaimportowałeś jeszcze żadnych danych." />
+        ) : (
+          <div style={{ marginTop: 12 }}>
+            <div style={S.tableHeader}>
+              <span style={{ flex: 2 }}>Plik</span>
+              <span style={{ flex: 1 }}>Wierszy</span>
+              <span style={{ flex: 1.4 }}>Data</span>
+              <span style={{ flex: 1 }}>Status</span>
+              <span style={{ flex: 1 }}></span>
+            </div>
+            {importHistory.map((h) => (
+              <div key={h.id} style={S.tableRow}>
+                <span style={{ flex: 2, textAlign: "left" }}>{h.filename || "—"}</span>
+                <span style={{ flex: 1, textAlign: "left" }}>{h.rowCount}</span>
+                <span style={{ flex: 1.4, textAlign: "left" }}>{fmtDateTime(h.createdAt)}</span>
+                <span style={{ flex: 1, textAlign: "left" }}>{h.status === "wycofano" ? "Wycofano" : "Zaimportowano"}</span>
+                <span style={{ flex: 1, textAlign: "left" }}>
+                  {h.status !== "wycofano" && (
+                    <button onClick={() => undo(h.id)} style={{ ...S.secondaryBtn, padding: "5px 10px", fontSize: 11.5 }}>Wycofaj</button>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Szablony zadań (Kalendarz i zadania) ---------- */
+function TaskTemplatesSettingsPanel({ taskTemplates, templateItems, onSaveTemplate, onRemoveTemplate }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  return (
+    <div style={S.card}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={S.cardTitle}>Szablony zadań</div>
+        <button onClick={() => { setEditing(null); setShowForm(true); }} style={S.primaryBtn}><Plus size={14} /> Dodaj szablon</button>
+      </div>
+      <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+        Gotowe zestawy zadań (np. „Działania posprzedażowe"), które jednym kliknięciem dodasz do dowolnej
+        szansy sprzedaży — z karty „Zadania" w widoku szansy.
+      </div>
+      {taskTemplates.length === 0 ? (
+        <EmptyNote text="Brak zapisanych szablonów zadań." />
+      ) : (
+        <div>
+          <div style={S.tableHeader}>
+            <span style={{ flex: 2 }}>Nazwa szablonu</span>
+            <span style={{ flex: 1 }}>Liczba zadań</span>
+            <span style={{ flex: 1 }}>Akcje</span>
+          </div>
+          {taskTemplates.map((t) => {
+            const items = templateItems.filter((it) => it.templateId === t.id);
+            return (
+              <div key={t.id} style={S.tableRow}>
+                <span style={{ flex: 2, textAlign: "left", fontWeight: 700 }}>{t.name}</span>
+                <span style={{ flex: 1, textAlign: "left" }}>{items.length}</span>
+                <span style={{ flex: 1, display: "flex", gap: 6 }}>
+                  <button className="iconBtn" onClick={() => { setEditing({ ...t, items }); setShowForm(true); }} style={S.iconBtnStyle}><Edit2 size={14} /></button>
+                  <button onClick={() => { if (window.confirm("Usunąć ten szablon?")) onRemoveTemplate(t.id); }} style={S.dangerBtn}><Trash2 size={14} /></button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showForm && (
+        <TemplateFormModal
+          initial={editing}
+          onClose={() => setShowForm(false)}
+          onSave={async (draft) => { await onSaveTemplate(draft); setShowForm(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TemplateFormModal({ initial, onClose, onSave }) {
+  const [name, setName] = useState(initial ? initial.name : "");
+  const [items, setItems] = useState(initial ? initial.items.map((it) => ({ type: it.type, title: it.title, offsetDays: it.offsetDays })) : []);
+  const [saving, setSaving] = useState(false);
+
+  function addItem() {
+    setItems((prev) => [...prev, { type: "call", title: "", offsetDays: 0 }]);
+  }
+  function updateItem(idx, patch) {
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  }
+  function removeItem(idx) {
+    setItems((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!name.trim() || items.length === 0) return;
+    setSaving(true);
+    await onSave({ id: initial ? initial.id : null, name: name.trim(), items });
+    setSaving(false);
+  }
+
+  return (
+    <div style={S.modalOverlay} onClick={onClose}>
+      <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, fontWeight: 600 }}>
+            {initial ? "Edytuj szablon" : "Nowy szablon zadań"}
+          </h2>
+          <button onClick={onClose} style={{ background: "none", border: "none" }}><X size={18} /></button>
+        </div>
+        <form onSubmit={submit}>
+          <Field label="Nazwa szablonu *" value={name} onChange={setName} required />
+          <div style={{ ...S.label, marginTop: 16, marginBottom: 8 }}>Zadania w szablonie</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {items.map((it, idx) => (
+              <div key={idx} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <select value={it.type} onChange={(e) => updateItem(idx, { type: e.target.value })} style={{ ...S.select, width: 130 }}>
+                  {Object.entries(TASK_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+                <input value={it.title} onChange={(e) => updateItem(idx, { title: e.target.value })} placeholder="Treść zadania" style={{ ...S.input, flex: 1 }} />
+                <input
+                  type="number"
+                  value={it.offsetDays}
+                  onChange={(e) => updateItem(idx, { offsetDays: e.target.value })}
+                  title="Ile dni od zastosowania szablonu"
+                  style={{ ...S.input, width: 70 }}
+                />
+                <span style={{ fontSize: 11, color: "#9A9A9A", whiteSpace: "nowrap" }}>dni</span>
+                <button type="button" onClick={() => removeItem(idx)} className="iconBtn" style={S.iconBtnStyle}><X size={14} /></button>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addItem} style={{ ...S.secondaryBtn, marginTop: 10 }}><Plus size={13} /> Dodaj zadanie do szablonu</button>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+            <button type="button" onClick={onClose} style={S.secondaryBtn}>Anuluj</button>
+            <button type="submit" disabled={saving || items.length === 0} style={S.primaryBtn}>{saving ? "Zapisywanie…" : "Zapisz szablon"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Ustawienia regionalne ---------- */
+const DATE_FORMAT_OPTIONS = [
+  { value: "Y-m-d", label: "Y-m-d (2026-07-29)" },
+  { value: "d.m.Y", label: "d.m.Y (29.07.2026)" },
+  { value: "d/m/Y", label: "d/m/Y (29/07/2026)" },
+  { value: "m/d/Y", label: "m/d/Y (07/29/2026)" },
+];
+const TIME_FORMAT_OPTIONS = [
+  { value: "H:i", label: "H:i (14:05, 24h)" },
+  { value: "h:i A", label: "h:i A (2:05 PM, 12h)" },
+];
+const TIMEZONE_OPTIONS = ["Europe/Warsaw", "Europe/London", "UTC"];
+
+function RegionalSettingsPanel({ regionalSettings, onUpdateUserSettings }) {
+  const [form, setForm] = useState(regionalSettings);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setForm(regionalSettings); }, [regionalSettings]);
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    await onUpdateUserSettings({ regional: form });
+    setSaving(false);
+  }
+
+  return (
+    <div style={S.card}>
+      <div style={S.cardTitle}>Ustawienia regionalne</div>
+      <div style={{ fontSize: 11.5, color: "#9A9A9A", marginTop: 10, marginBottom: 6, lineHeight: 1.5 }}>
+        Strefa czasowa ma charakter informacyjny — CRM nie przelicza dat między strefami, wszystkie terminy
+        są zapisywane w czasie lokalnym Twojej przeglądarki. Pozostałe ustawienia od razu zmieniają wygląd
+        dat i kwot w całym CRM.
+      </div>
+      <form onSubmit={save} style={{ marginTop: 12 }}>
+        <div style={S.label}>Data i czas</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8, marginBottom: 20 }}>
+          <div>
+            <label style={S.label}>Strefa czasowa</label>
+            <select value={form.timezone} onChange={(e) => setForm((f) => ({ ...f, timezone: e.target.value }))} style={S.input}>
+              {TIMEZONE_OPTIONS.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Pierwszy dzień tygodnia</label>
+            <select value={form.firstDayOfWeek} onChange={(e) => setForm((f) => ({ ...f, firstDayOfWeek: e.target.value }))} style={S.input}>
+              <option value="monday">poniedziałek</option>
+              <option value="sunday">niedziela</option>
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Format daty</label>
+            <select value={form.dateFormat} onChange={(e) => setForm((f) => ({ ...f, dateFormat: e.target.value }))} style={S.input}>
+              {DATE_FORMAT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Format czasu</label>
+            <select value={form.timeFormat} onChange={(e) => setForm((f) => ({ ...f, timeFormat: e.target.value }))} style={S.input}>
+              {TIME_FORMAT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div style={S.label}>Liczby i kwoty</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8, marginBottom: 20 }}>
+          <div>
+            <label style={S.label}>Symbol dziesiętny</label>
+            <select value={form.decimalSymbol} onChange={(e) => setForm((f) => ({ ...f, decimalSymbol: e.target.value }))} style={S.input}>
+              <option value=",">, (przecinek)</option>
+              <option value=".">. (kropka)</option>
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Separator tysięcy</label>
+            <select value={form.thousandsSeparator} onChange={(e) => setForm((f) => ({ ...f, thousandsSeparator: e.target.value }))} style={S.input}>
+              <option value=" ">spacja</option>
+              <option value=",">przecinek</option>
+              <option value=".">kropka</option>
+              <option value="">brak</option>
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Dokładność (miejsca po przecinku)</label>
+            <select value={form.decimalPlaces} onChange={(e) => setForm((f) => ({ ...f, decimalPlaces: Number(e.target.value) }))} style={S.input}>
+              <option value={0}>0</option>
+              <option value={1}>1</option>
+              <option value={2}>2</option>
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Format waluty</label>
+            <select value={form.currencyFormat} onChange={(e) => setForm((f) => ({ ...f, currencyFormat: e.target.value }))} style={S.input}>
+              <option value="value_symbol">wartość symbol (np. 125 zł)</option>
+              <option value="symbol_value">symbol wartość (np. zł 125)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button type="submit" disabled={saving} style={S.primaryBtn}>{saving ? "Zapisywanie…" : "Zapisz"}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ---------- Cele i zespół (admin) ---------- */
+function TeamGoalsSettingsPanel({ user, goals, onUpdateGoals }) {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState(null);
   const [goalsForm, setGoalsForm] = useState(goals);
   const [savingGoals, setSavingGoals] = useState(false);
 
@@ -2979,7 +3982,7 @@ function SettingsPanel({ user, goals, onUpdateGoals }) {
       <div style={S.card}>
         <div style={S.cardTitle}>Cele miesięczne</div>
         <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
-          Progi widoczne na pulpicie w sekcji „Twoje statystyki". Wymaga uruchomienia migracji SQL (tabela goals).
+          Progi widoczne na pulpicie w sekcji „Twoje statystyki".
         </div>
         <form onSubmit={saveGoals} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, alignItems: "end" }}>
           <div>
