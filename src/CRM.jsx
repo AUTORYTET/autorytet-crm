@@ -2,10 +2,11 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Phone, Mail, MapPin, Building2, Car, Wallet, CalendarClock, Plus,
   Search, CheckCircle2, Circle, X, LayoutGrid, Users, ListChecks,
-  Handshake, Bell, Trash2, ChevronRight, LogOut, Loader2, Settings, UserPlus, Edit2,
-  Tag, Pin, Send
+  Handshake, Bell, Trash2, ChevronRight, ChevronLeft, LogOut, Loader2, Settings, UserPlus, Edit2,
+  Tag, Pin, Send, Calendar, BarChart3, Package, Link2, Sparkles, Filter, MoreVertical
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
+import logo from "./assets/logo.png";
 
 /* ---------- Design tokens ----------
   Black  #111111   Red  #E4241B   White #FFFFFF
@@ -25,12 +26,12 @@ function useFonts() {
   }, []);
 }
 
-const STATUSES = [
-  { key: "nowy", label: "Nowy kontakt", color: "#9A9A9A" },
-  { key: "kontakt", label: "W kontakcie", color: "#2F6FED" },
-  { key: "negocjacje", label: "Negocjacje", color: "#E4241B" },
-  { key: "sprzedane", label: "Sprzedane", color: "#1C8A4B" },
-  { key: "utracony", label: "Utracony", color: "#6B6B6B" },
+/* ---------- Szanse sprzedaży: status ---------- */
+const DEAL_STATUSES = [
+  { key: "otwarta", label: "Otwarta", color: "#2F6FED" },
+  { key: "wygrana", label: "Wygrana", color: "#1C8A4B" },
+  { key: "przegrana", label: "Przegrana", color: "#E4241B" },
+  { key: "nieaktualna", label: "Nieaktualna", color: "#9A9A9A" },
 ];
 
 const FINANCING = ["Gotówka", "Kredyt", "Leasing", "Raty"];
@@ -54,20 +55,13 @@ const LEAD_SOURCES = ["Telefon", "Formularz WWW", "Polecenie", "Media społeczno
 
 const VISIBILITY_OPTIONS = ["Publiczna", "Prywatna"];
 const PURCHASE_TYPES = ["Zakup gotówkowy", "Kredyt", "Leasing", "Wykup z leasingu", "Zamiana"];
-
-const STATUS_PROBABILITY = {
-  nowy: 10,
-  kontakt: 30,
-  negocjacje: 60,
-  sprzedane: 100,
-  utracony: 0,
-};
+const RELATION_TYPES = ["Firma powiązana", "Rodzina", "Polecił", "Współpracownik", "Inne"];
 
 /* ---------- Proces sprzedaży: etapy odznaczane po kolei ----------
    Etap "dane" jest liczony automatycznie na podstawie wypełnionych pól.
    Kolejne etapy są odznaczane ręcznie i tylko w kolejności — nie da się
    zaznaczyć kroku, dopóki wszystkie wcześniejsze (włącznie z etapem "dane")
-   nie są zaznaczone. Stan zapisywany jest w kliencie: pipelineSteps.
+   nie są zaznaczone. Stan zapisywany jest w szansie sprzedaży: pipelineSteps.
 -------------------------------------------------------------------*/
 const PIPELINE_STAGES = [
   {
@@ -75,10 +69,10 @@ const PIPELINE_STAGES = [
     label: "Kompletowanie danych",
     auto: true,
     steps: [
-      { key: "dane_kontakt", label: "Uzupełniono dane kontaktowe", check: (c) => !!(c.phone && c.email) },
-      { key: "dane_nip", label: "Uzupełniono NIP", check: (c) => !!c.nip },
-      { key: "dane_budzet", label: "Uzupełniono budżet na nowy pojazd", check: (c) => !!c.budget },
-      { key: "dane_finansowanie", label: "Określono formę finansowania pojazdu", check: (c) => !!c.financing },
+      { key: "dane_kontakt", label: "Uzupełniono dane kontaktowe", check: (d, company) => !!(company && company.phone && company.email) },
+      { key: "dane_nip", label: "Uzupełniono NIP", check: (d, company) => !!(company && company.nip) },
+      { key: "dane_budzet", label: "Uzupełniono budżet na nowy pojazd", check: (d) => !!d.budget },
+      { key: "dane_finansowanie", label: "Określono formę finansowania pojazdu", check: (d) => !!d.financing },
     ],
   },
   {
@@ -114,11 +108,11 @@ const PIPELINE_FLAT_ORDER = PIPELINE_STAGES.flatMap((stage) =>
   stage.steps.map((s) => ({ key: s.key, auto: !!stage.auto }))
 );
 
-function computePipeline(client) {
+function computePipeline(deal, company) {
   let previousDone = true;
   const stages = PIPELINE_STAGES.map((stage) => {
     const steps = stage.steps.map((step) => {
-      const done = stage.auto ? step.check(client) : !!(client.pipelineSteps && client.pipelineSteps[step.key]);
+      const done = stage.auto ? step.check(deal, company) : !!(deal.pipelineSteps && deal.pipelineSteps[step.key]);
       const unlocked = stage.auto ? true : previousDone;
       previousDone = previousDone && done;
       return { ...step, done, unlocked };
@@ -127,7 +121,29 @@ function computePipeline(client) {
   });
   const flatSteps = stages.flatMap((s) => s.steps);
   const donePct = Math.round((flatSteps.filter((s) => s.done).length / flatSteps.length) * 100);
-  return { stages, donePct };
+  const currentStage = stages.find((s) => !s.done) || stages[stages.length - 1];
+  return { stages, donePct, currentStage };
+}
+
+function dealProbability(deal, company) {
+  if (deal.status === "wygrana") return 100;
+  if (deal.status === "przegrana" || deal.status === "nieaktualna") return 0;
+  return computePipeline(deal, company).donePct;
+}
+
+function toggleStepInSteps(pipelineSteps, stepKey) {
+  const idx = PIPELINE_FLAT_ORDER.findIndex((s) => s.key === stepKey);
+  const current = !!(pipelineSteps && pipelineSteps[stepKey]);
+  const next = { ...(pipelineSteps || {}) };
+  if (!current) {
+    next[stepKey] = true;
+  } else {
+    for (let i = idx; i < PIPELINE_FLAT_ORDER.length; i++) {
+      const s = PIPELINE_FLAT_ORDER[i];
+      if (!s.auto) delete next[s.key];
+    }
+  }
+  return next;
 }
 
 function daysLeftInMonth() {
@@ -163,8 +179,56 @@ function daysUntil(d) {
   return Math.round((target - today) / 86400000);
 }
 
+function initials(name) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  return (parts[0][0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
+}
+
+function fmtMoney(n) {
+  return `${Number(n || 0).toLocaleString("pl-PL")} zł`;
+}
+
+/* ---------- Kalendarz: pomocnicze funkcje dat ---------- */
+function startOfWeekMonday(d) {
+  const dt = new Date(d);
+  const day = dt.getDay(); // 0 = niedziela
+  const diff = day === 0 ? -6 : 1 - day;
+  dt.setDate(dt.getDate() + diff);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+function addDays(d, n) {
+  const dt = new Date(d);
+  dt.setDate(dt.getDate() + n);
+  return dt;
+}
+
+function isSameDay(a, b) {
+  if (!a || !b) return false;
+  const da = new Date(a), db = new Date(b);
+  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
+}
+
+function monthMatrix(anchorDate) {
+  const first = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
+  const gridStart = startOfWeekMonday(first);
+  const weeks = [];
+  let cursor = gridStart;
+  for (let w = 0; w < 6; w++) {
+    const week = [];
+    for (let d = 0; d < 7; d++) {
+      week.push(cursor);
+      cursor = addDays(cursor, 1);
+    }
+    weeks.push(week);
+  }
+  return weeks;
+}
+
 /* ---------- DB <-> UI mapping ---------- */
-function clientFromDb(row) {
+function companyFromDb(row) {
   return {
     id: row.id,
     ownerId: row.owner_id,
@@ -173,58 +237,82 @@ function clientFromDb(row) {
     email: row.email,
     address: row.address,
     nip: row.nip,
-    carInterest: row.car_model,
-    budget: row.budget,
-    financing: row.financing_type,
-    decisionDate: row.deadline,
-    status: row.status,
     notes: row.notes,
     createdAt: row.created_at,
     contactPerson: row.contact_person || "",
     source: row.source || "",
     tags: Array.isArray(row.tags) ? row.tags : [],
     pinnedNote: row.pinned_note || "",
-    statusChangedAt: row.status_changed_at || row.created_at,
-    visibility: row.visibility || "Publiczna",
-    purchaseType: row.purchase_type || "",
-    pipelineSteps: row.pipeline_steps || {},
-    winReason: row.win_reason || "",
-    lossReason: row.loss_reason || "",
   };
 }
-function clientToDb(c, fallbackOwnerId) {
+function companyToDb(c, fallbackOwnerId) {
   return {
     name: c.name, phone: c.phone, email: c.email, address: c.address, nip: c.nip,
-    car_model: c.carInterest, budget: c.budget ? Number(c.budget) : null,
-    financing_type: c.financing, deadline: c.decisionDate || null,
-    status: c.status, notes: c.notes, owner_id: c.ownerId || fallbackOwnerId,
+    notes: c.notes, owner_id: c.ownerId || fallbackOwnerId,
     contact_person: c.contactPerson || null,
     source: c.source || null,
     tags: Array.isArray(c.tags) && c.tags.length ? c.tags : null,
     pinned_note: c.pinnedNote || null,
-    visibility: c.visibility || "Publiczna",
-    purchase_type: c.purchaseType || null,
-    pipeline_steps: c.pipelineSteps || {},
-    win_reason: c.winReason || null,
-    loss_reason: c.lossReason || null,
   };
 }
+
+function dealFromDb(row) {
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    ownerId: row.owner_id,
+    name: row.name,
+    carInterest: row.car_model,
+    budget: row.budget,
+    financing: row.financing_type,
+    decisionDate: row.deadline,
+    status: row.status,
+    purchaseType: row.purchase_type || "",
+    visibility: row.visibility || "Publiczna",
+    pipelineSteps: row.pipeline_steps || {},
+    winReason: row.win_reason || "",
+    lossReason: row.loss_reason || "",
+    statusChangedAt: row.status_changed_at || row.created_at,
+    notes: row.notes,
+    createdAt: row.created_at,
+  };
+}
+function dealToDb(d, fallbackOwnerId) {
+  return {
+    company_id: d.companyId,
+    name: d.name || "Szansa sprzedaży",
+    car_model: d.carInterest,
+    budget: d.budget ? Number(d.budget) : null,
+    financing_type: d.financing,
+    deadline: d.decisionDate || null,
+    status: d.status || "otwarta",
+    purchase_type: d.purchaseType || null,
+    visibility: d.visibility || "Publiczna",
+    pipeline_steps: d.pipelineSteps || {},
+    win_reason: d.winReason || null,
+    loss_reason: d.lossReason || null,
+    notes: d.notes,
+    owner_id: d.ownerId || fallbackOwnerId,
+  };
+}
+
 function taskFromDb(row) {
   return {
-    id: row.id, clientId: row.client_id, ownerId: row.owner_id,
+    id: row.id, clientId: row.client_id, dealId: row.deal_id, ownerId: row.owner_id,
     type: row.type, title: row.title, dueDate: row.due_date, done: row.done, createdAt: row.created_at,
   };
 }
 function taskToDb(t, ownerId) {
   return {
-    client_id: t.clientId, type: t.type, title: t.title,
+    client_id: t.clientId || null, deal_id: t.dealId || null, type: t.type, title: t.title,
     due_date: t.dueDate || null, done: !!t.done, owner_id: ownerId,
   };
 }
+
 function activityFromDb(row) {
   return {
     id: row.id,
-    clientId: row.client_id,
+    companyId: row.client_id,
     ownerId: row.owner_id,
     type: row.type,
     title: row.title,
@@ -234,48 +322,45 @@ function activityFromDb(row) {
 }
 function activityToDb(a, ownerId) {
   return {
-    client_id: a.clientId, type: a.type, title: a.title, body: a.body, owner_id: ownerId,
+    client_id: a.companyId, type: a.type, title: a.title, body: a.body, owner_id: ownerId,
   };
 }
+
 function productFromDb(row) {
   return {
-    id: row.id, clientId: row.client_id, ownerId: row.owner_id,
-    name: row.name, quantity: row.quantity, unitPrice: row.unit_price, createdAt: row.created_at,
+    id: row.id, dealId: row.deal_id, name: row.name,
+    quantity: row.quantity, unitPrice: row.unit_price, costPrice: row.cost_price, createdAt: row.created_at,
   };
 }
 function productToDb(p, ownerId) {
   return {
-    client_id: p.clientId, name: p.name,
+    deal_id: p.dealId, name: p.name,
     quantity: p.quantity ? Number(p.quantity) : 1,
     unit_price: p.unitPrice ? Number(p.unitPrice) : 0,
+    cost_price: p.costPrice ? Number(p.costPrice) : 0,
     owner_id: ownerId,
   };
 }
+
 function costFromDb(row) {
-  return {
-    id: row.id, clientId: row.client_id, ownerId: row.owner_id,
-    name: row.name, amount: row.amount, createdAt: row.created_at,
-  };
+  return { id: row.id, dealId: row.deal_id, name: row.name, amount: row.amount, createdAt: row.created_at };
 }
 function costToDb(c, ownerId) {
-  return {
-    client_id: c.clientId, name: c.name, amount: c.amount ? Number(c.amount) : 0, owner_id: ownerId,
-  };
+  return { deal_id: c.dealId, name: c.name, amount: c.amount ? Number(c.amount) : 0, owner_id: ownerId };
 }
+
 function relationFromDb(row) {
   return {
-    id: row.id, clientId: row.client_id, relatedClientId: row.related_client_id,
-    ownerId: row.owner_id, note: row.note || "", createdAt: row.created_at,
+    id: row.id, companyAId: row.company_a_id, companyBId: row.company_b_id,
+    relationType: row.relation_type, note: row.note, createdAt: row.created_at,
   };
 }
 function relationToDb(r, ownerId) {
   return {
-    client_id: r.clientId, related_client_id: r.relatedClientId, note: r.note || null, owner_id: ownerId,
+    company_a_id: r.companyAId, company_b_id: r.companyBId,
+    relation_type: r.relationType, note: r.note || null, owner_id: ownerId,
   };
 }
-
-/* ---------- Logo ---------- */
-import logo from "./assets/logo.png";
 
 function vehicleFromDb(row) {
   return {
@@ -318,8 +403,8 @@ function Logo({ compact }) {
   );
 }
 
-function StatusPill({ statusKey }) {
-  const s = STATUSES.find((x) => x.key === statusKey) || STATUSES[0];
+function DealStatusPill({ statusKey }) {
+  const s = DEAL_STATUSES.find((x) => x.key === statusKey) || DEAL_STATUSES[0];
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600,
@@ -332,74 +417,94 @@ function StatusPill({ statusKey }) {
   );
 }
 
+function CompanyAvatar({ name, size = 34 }) {
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: "50%", background: "#111111", color: "#fff",
+      display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.36,
+      fontWeight: 700, flexShrink: 0,
+    }}>
+      {initials(name)}
+    </div>
+  );
+}
+
 /* ---------- Main App ---------- */
 export default function CRM({ user, profile, onLogout }) {
   useFonts();
-  const [clients, setClients] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [deals, setDeals] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [activities, setActivities] = useState([]);
-  const [staff, setStaff] = useState([]);
-  const [goals, setGoals] = useState({ contactsTarget: 10, dealsTarget: 5, valueTarget: 100000 });
   const [products, setProducts] = useState([]);
   const [costs, setCosts] = useState([]);
   const [relations, setRelations] = useState([]);
+  const [staff, setStaff] = useState([]);
+  const [goals, setGoals] = useState({ contactsTarget: 10, dealsTarget: 5, valueTarget: 100000 });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("dashboard");
-  const [selectedClientId, setSelectedClientId] = useState(null);
-  const [showClientForm, setShowClientForm] = useState(false);
-  const [editingClient, setEditingClient] = useState(null);
+  const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+  const [selectedDealId, setSelectedDealId] = useState(null);
+  const [showCompanyForm, setShowCompanyForm] = useState(false);
+  const [editingCompany, setEditingCompany] = useState(null);
+  const [showDealForm, setShowDealForm] = useState(false);
+  const [editingDeal, setEditingDeal] = useState(null);
+  const [dealFormCompanyId, setDealFormCompanyId] = useState(null);
   const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState(null);
   const [vehicleStatusFilter, setVehicleStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [companyShowFilter, setCompanyShowFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState(null);
+  const [dealShowFilter, setDealShowFilter] = useState("all");
+  const [dealStatusFilter, setDealStatusFilter] = useState("all");
   const [error, setError] = useState(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
+      let companiesRes = await supabase.from("companies").select("*").order("created_at", { ascending: false });
+      if (companiesRes.error) {
+        // Migracja SQL nie została jeszcze uruchomiona — awaryjnie czytamy ze starej tabeli.
+        companiesRes = await supabase.from("clients").select("*").order("created_at", { ascending: false });
+      }
+      if (companiesRes.error) throw companiesRes.error;
+
       const [
-        { data: clientRows, error: e1 },
-        { data: taskRows, error: e2 },
-        { data: vehicleRows, error: e3 },
-        activityRes,
-        staffRes,
-        goalsRes,
-        productRes,
-        costRes,
-        relationRes,
+        dealsRes, taskRes, vehicleRes, activityRes, staffRes, goalsRes, productsRes, costsRes, relationsRes,
       ] = await Promise.all([
-        supabase.from("clients").select("*").order("created_at", { ascending: false }),
+        supabase.from("deals").select("*").order("created_at", { ascending: false }),
         supabase.from("tasks").select("*").order("due_date", { ascending: true }),
         supabase.from("cars").select("*").order("created_at", { ascending: false }),
         supabase.from("client_activities").select("*").order("created_at", { ascending: false }),
         supabase.from("profiles").select("*"),
         supabase.from("goals").select("*").eq("id", 1).maybeSingle(),
-        supabase.from("client_products").select("*").order("created_at", { ascending: true }),
-        supabase.from("client_costs").select("*").order("created_at", { ascending: true }),
-        supabase.from("client_relations").select("*").order("created_at", { ascending: false }),
+        supabase.from("deal_products").select("*"),
+        supabase.from("deal_costs").select("*"),
+        supabase.from("company_relations").select("*"),
       ]);
-      if (e1) throw e1;
-      if (e2) throw e2;
-      if (e3) throw e3;
-      setClients((clientRows || []).map(clientFromDb));
-      setTasks((taskRows || []).map(taskFromDb));
-      setVehicles((vehicleRows || []).map(vehicleFromDb));
-      // client_activities / profiles / goals / client_products / client_costs /
-      // client_relations to nowe tabele — jeśli migration.sql nie został jeszcze
-      // uruchomiony, ich błąd jest ignorowany i nie blokuje reszty CRM.
+      if (taskRes.error) throw taskRes.error;
+      if (vehicleRes.error) throw vehicleRes.error;
+
+      setCompanies((companiesRes.data || []).map(companyFromDb));
+      setDeals(dealsRes.error ? [] : (dealsRes.data || []).map(dealFromDb));
+      setTasks((taskRes.data || []).map(taskFromDb));
+      setVehicles((vehicleRes.data || []).map(vehicleFromDb));
       setActivities(activityRes.error ? [] : (activityRes.data || []).map(activityFromDb));
       setStaff(staffRes.error ? [] : (staffRes.data || []));
-      setProducts(productRes.error ? [] : (productRes.data || []).map(productFromDb));
-      setCosts(costRes.error ? [] : (costRes.data || []).map(costFromDb));
-      setRelations(relationRes.error ? [] : (relationRes.data || []).map(relationFromDb));
+      setProducts(productsRes.error ? [] : (productsRes.data || []).map(productFromDb));
+      setCosts(costsRes.error ? [] : (costsRes.data || []).map(costFromDb));
+      setRelations(relationsRes.error ? [] : (relationsRes.data || []).map(relationFromDb));
       if (!goalsRes.error && goalsRes.data) {
         setGoals({
           contactsTarget: goalsRes.data.contacts_target,
           dealsTarget: goalsRes.data.deals_target,
           valueTarget: goalsRes.data.value_target,
         });
+      }
+      if (dealsRes.error) {
+        setError("Tabela szans sprzedaży (deals) nie istnieje jeszcze w bazie — uruchom migrację SQL (migration_v2_deals.sql), aby korzystać z nowych widoków.");
       }
     } catch (e) {
       setError("Nie udało się wczytać danych: " + (e.message || ""));
@@ -410,40 +515,71 @@ export default function CRM({ user, profile, onLogout }) {
 
   useEffect(() => { reload(); }, [reload]);
 
-  const upsertClient = useCallback(async (client) => {
+  const upsertCompany = useCallback(async (company) => {
     try {
-      if (client.id) {
-        const { data, error } = await supabase.from("clients").update(clientToDb(client, user.id)).eq("id", client.id).select().single();
+      if (company.id) {
+        const { data, error } = await supabase.from("companies").update(companyToDb(company, user.id)).eq("id", company.id).select().single();
         if (error) throw error;
-        setClients((prev) => prev.map((c) => (c.id === data.id ? clientFromDb(data) : c)));
-        return clientFromDb(data);
+        setCompanies((prev) => prev.map((c) => (c.id === data.id ? companyFromDb(data) : c)));
+        return companyFromDb(data);
       } else {
-        const { data, error } = await supabase.from("clients").insert(clientToDb(client, user.id)).select().single();
+        const { data, error } = await supabase.from("companies").insert(companyToDb(company, user.id)).select().single();
         if (error) throw error;
-        setClients((prev) => [clientFromDb(data), ...prev]);
-        return clientFromDb(data);
+        setCompanies((prev) => [companyFromDb(data), ...prev]);
+        return companyFromDb(data);
       }
     } catch (e) {
-      setError("Nie udało się zapisać klienta: " + (e.message || ""));
+      setError("Nie udało się zapisać firmy: " + (e.message || ""));
       return null;
     }
   }, [user.id]);
 
-  const removeClient = useCallback(async (id) => {
-    const prevClients = clients;
-    const prevTasks = tasks;
-    setClients((prev) => prev.filter((c) => c.id !== id));
-    setTasks((prev) => prev.filter((t) => t.clientId !== id));
-    if (selectedClientId === id) setSelectedClientId(null);
+  const removeCompany = useCallback(async (id) => {
+    const prevCompanies = companies;
+    setCompanies((prev) => prev.filter((c) => c.id !== id));
+    if (selectedCompanyId === id) { setSelectedCompanyId(null); setSelectedDealId(null); }
     try {
-      const { error } = await supabase.from("clients").delete().eq("id", id);
+      const { error } = await supabase.from("companies").delete().eq("id", id);
       if (error) throw error;
+      reload();
     } catch (e) {
-      setClients(prevClients);
-      setTasks(prevTasks);
-      setError("Nie udało się usunąć klienta: " + (e.message || ""));
+      setCompanies(prevCompanies);
+      setError("Nie udało się usunąć firmy: " + (e.message || ""));
     }
-  }, [selectedClientId, clients, tasks]);
+  }, [companies, selectedCompanyId, reload]);
+
+  const upsertDeal = useCallback(async (deal) => {
+    try {
+      if (deal.id) {
+        const { data, error } = await supabase.from("deals").update(dealToDb(deal, user.id)).eq("id", deal.id).select().single();
+        if (error) throw error;
+        setDeals((prev) => prev.map((d) => (d.id === data.id ? dealFromDb(data) : d)));
+        return dealFromDb(data);
+      } else {
+        const { data, error } = await supabase.from("deals").insert(dealToDb(deal, user.id)).select().single();
+        if (error) throw error;
+        setDeals((prev) => [dealFromDb(data), ...prev]);
+        return dealFromDb(data);
+      }
+    } catch (e) {
+      setError("Nie udało się zapisać szansy sprzedaży: " + (e.message || ""));
+      return null;
+    }
+  }, [user.id]);
+
+  const removeDeal = useCallback(async (id) => {
+    const prevDeals = deals;
+    setDeals((prev) => prev.filter((d) => d.id !== id));
+    if (selectedDealId === id) setSelectedDealId(null);
+    try {
+      const { error } = await supabase.from("deals").delete().eq("id", id);
+      if (error) throw error;
+      reload();
+    } catch (e) {
+      setDeals(prevDeals);
+      setError("Nie udało się usunąć szansy sprzedaży: " + (e.message || ""));
+    }
+  }, [deals, selectedDealId, reload]);
 
   const upsertTask = useCallback(async (task) => {
     try {
@@ -523,6 +659,72 @@ export default function CRM({ user, profile, onLogout }) {
     }
   }, [activities]);
 
+  const addProduct = useCallback(async (product) => {
+    try {
+      const { data, error } = await supabase.from("deal_products").insert(productToDb(product, user.id)).select().single();
+      if (error) throw error;
+      setProducts((prev) => [productFromDb(data), ...prev]);
+    } catch (e) {
+      setError("Nie udało się dodać produktu: " + (e.message || ""));
+    }
+  }, [user.id]);
+
+  const removeProduct = useCallback(async (id) => {
+    const prev = products;
+    setProducts((p) => p.filter((x) => x.id !== id));
+    try {
+      const { error } = await supabase.from("deal_products").delete().eq("id", id);
+      if (error) throw error;
+    } catch (e) {
+      setProducts(prev);
+      setError("Nie udało się usunąć produktu: " + (e.message || ""));
+    }
+  }, [products]);
+
+  const addCost = useCallback(async (cost) => {
+    try {
+      const { data, error } = await supabase.from("deal_costs").insert(costToDb(cost, user.id)).select().single();
+      if (error) throw error;
+      setCosts((prev) => [costFromDb(data), ...prev]);
+    } catch (e) {
+      setError("Nie udało się dodać kosztu: " + (e.message || ""));
+    }
+  }, [user.id]);
+
+  const removeCost = useCallback(async (id) => {
+    const prev = costs;
+    setCosts((c) => c.filter((x) => x.id !== id));
+    try {
+      const { error } = await supabase.from("deal_costs").delete().eq("id", id);
+      if (error) throw error;
+    } catch (e) {
+      setCosts(prev);
+      setError("Nie udało się usunąć kosztu: " + (e.message || ""));
+    }
+  }, [costs]);
+
+  const addRelation = useCallback(async (relation) => {
+    try {
+      const { data, error } = await supabase.from("company_relations").insert(relationToDb(relation, user.id)).select().single();
+      if (error) throw error;
+      setRelations((prev) => [relationFromDb(data), ...prev]);
+    } catch (e) {
+      setError("Nie udało się dodać powiązania: " + (e.message || ""));
+    }
+  }, [user.id]);
+
+  const removeRelation = useCallback(async (id) => {
+    const prev = relations;
+    setRelations((r) => r.filter((x) => x.id !== id));
+    try {
+      const { error } = await supabase.from("company_relations").delete().eq("id", id);
+      if (error) throw error;
+    } catch (e) {
+      setRelations(prev);
+      setError("Nie udało się usunąć powiązania: " + (e.message || ""));
+    }
+  }, [relations]);
+
   const updateGoals = useCallback(async (nextGoals) => {
     try {
       const { error } = await supabase.from("goals").update({
@@ -537,81 +739,21 @@ export default function CRM({ user, profile, onLogout }) {
     }
   }, []);
 
-  const addProduct = useCallback(async (product) => {
-    try {
-      const { data, error } = await supabase.from("client_products").insert(productToDb(product, user.id)).select().single();
-      if (error) throw error;
-      setProducts((prev) => [...prev, productFromDb(data)]);
-    } catch (e) {
-      setError("Nie udało się dodać produktu: " + (e.message || ""));
-    }
-  }, [user.id]);
-
-  const removeProduct = useCallback(async (id) => {
-    const prev = products;
-    setProducts((p) => p.filter((x) => x.id !== id));
-    try {
-      const { error } = await supabase.from("client_products").delete().eq("id", id);
-      if (error) throw error;
-    } catch (e) {
-      setProducts(prev);
-      setError("Nie udało się usunąć produktu: " + (e.message || ""));
-    }
-  }, [products]);
-
-  const addCost = useCallback(async (cost) => {
-    try {
-      const { data, error } = await supabase.from("client_costs").insert(costToDb(cost, user.id)).select().single();
-      if (error) throw error;
-      setCosts((prev) => [...prev, costFromDb(data)]);
-    } catch (e) {
-      setError("Nie udało się dodać kosztu: " + (e.message || ""));
-    }
-  }, [user.id]);
-
-  const removeCost = useCallback(async (id) => {
-    const prev = costs;
-    setCosts((c) => c.filter((x) => x.id !== id));
-    try {
-      const { error } = await supabase.from("client_costs").delete().eq("id", id);
-      if (error) throw error;
-    } catch (e) {
-      setCosts(prev);
-      setError("Nie udało się usunąć kosztu: " + (e.message || ""));
-    }
-  }, [costs]);
-
-  const addRelation = useCallback(async (relation) => {
-    try {
-      const { data, error } = await supabase.from("client_relations").insert(relationToDb(relation, user.id)).select().single();
-      if (error) throw error;
-      setRelations((prev) => [relationFromDb(data), ...prev]);
-    } catch (e) {
-      setError("Nie udało się dodać powiązania: " + (e.message || ""));
-    }
-  }, [user.id]);
-
-  const removeRelation = useCallback(async (id) => {
-    const prev = relations;
-    setRelations((r) => r.filter((x) => x.id !== id));
-    try {
-      const { error } = await supabase.from("client_relations").delete().eq("id", id);
-      if (error) throw error;
-    } catch (e) {
-      setRelations(prev);
-      setError("Nie udało się usunąć powiązania: " + (e.message || ""));
-    }
-  }, [relations]);
-
   const filteredVehicles = useMemo(() => {
     return vehicles.filter((v) => vehicleStatusFilter === "all" || v.status === vehicleStatusFilter);
   }, [vehicles, vehicleStatusFilter]);
 
-  const clientNameById = useMemo(() => {
+  const companiesById = useMemo(() => {
     const map = {};
-    clients.forEach((c) => { map[c.id] = c.name; });
+    companies.forEach((c) => { map[c.id] = c; });
     return map;
-  }, [clients]);
+  }, [companies]);
+
+  const dealsByCompanyId = useMemo(() => {
+    const map = {};
+    deals.forEach((d) => { (map[d.companyId] = map[d.companyId] || []).push(d); });
+    return map;
+  }, [deals]);
 
   const staffNameById = useMemo(() => {
     const map = {};
@@ -619,28 +761,60 @@ export default function CRM({ user, profile, onLogout }) {
     return map;
   }, [staff]);
 
-  const filteredClients = useMemo(() => {
-    return clients.filter((c) => {
-      const matchesSearch =
-        !search ||
-        [c.name, c.phone, c.email, c.carInterest, c.nip].join(" ").toLowerCase().includes(search.toLowerCase());
-      const matchesStatus = statusFilter === "all" || c.status === statusFilter;
-      return matchesSearch && matchesStatus;
+  const allTags = useMemo(() => {
+    const set = new Set();
+    companies.forEach((c) => (c.tags || []).forEach((t) => set.add(t)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pl"));
+  }, [companies]);
+
+  const filteredCompanies = useMemo(() => {
+    return companies.filter((c) => {
+      const matchesSearch = !search || [c.name, c.phone, c.email, c.nip].join(" ").toLowerCase().includes(search.toLowerCase());
+      const matchesMine = companyShowFilter !== "mine" || c.ownerId === user.id;
+      const matchesTag = !tagFilter || (c.tags || []).includes(tagFilter);
+      return matchesSearch && matchesMine && matchesTag;
+    }).sort((a, b) => (a.name || "").localeCompare(b.name || "", "pl"));
+  }, [companies, search, companyShowFilter, tagFilter, user.id]);
+
+  const filteredDeals = useMemo(() => {
+    return deals.filter((d) => {
+      const company = companiesById[d.companyId];
+      const matchesSearch = !search || [d.name, company && company.name, d.carInterest].join(" ").toLowerCase().includes(search.toLowerCase());
+      const matchesMine = dealShowFilter !== "mine" || d.ownerId === user.id;
+      const matchesStatus = dealStatusFilter === "all" || d.status === dealStatusFilter;
+      return matchesSearch && matchesMine && matchesStatus;
+    }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }, [deals, companiesById, search, dealShowFilter, dealStatusFilter, user.id]);
+
+  const taskMeta = useMemo(() => {
+    return tasks.map((t) => {
+      const deal = deals.find((d) => d.id === t.dealId);
+      const company = deal ? companiesById[deal.companyId] : (t.clientId ? companiesById[t.clientId] : null);
+      return {
+        ...t,
+        days: daysUntil(t.dueDate),
+        companyName: (company && company.name) || "—",
+        dealName: (deal && deal.name) || "",
+        ownerName: staffNameById[t.ownerId] || "—",
+      };
     });
-  }, [clients, search, statusFilter]);
+  }, [tasks, deals, companiesById, staffNameById]);
 
   const upcomingTasks = useMemo(() => {
-    return tasks
-      .filter((t) => !t.done)
-      .map((t) => ({ ...t, days: daysUntil(t.dueDate), clientName: clientNameById[t.clientId] || "—" }))
-      .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
-  }, [tasks, clientNameById]);
+    return taskMeta.filter((t) => !t.done).sort((a, b) => new Date(a.dueDate || 0) - new Date(b.dueDate || 0));
+  }, [taskMeta]);
 
-  const doneTasksWithNames = useMemo(() => {
-    return tasks.filter((t) => t.done).map((t) => ({ ...t, clientName: clientNameById[t.clientId] || "—" }));
-  }, [tasks, clientNameById]);
+  const doneTasksWithNames = useMemo(() => taskMeta.filter((t) => t.done), [taskMeta]);
 
-  const selectedClient = clients.find((c) => c.id === selectedClientId) || null;
+  const selectedCompany = companies.find((c) => c.id === selectedCompanyId) || null;
+  const selectedDeal = deals.find((d) => d.id === selectedDealId) || null;
+
+  const openCompany = (id) => { setSelectedCompanyId(id); setSelectedDealId(null); setTab("companies"); };
+  const openDeal = (id) => {
+    const deal = deals.find((d) => d.id === id);
+    setSelectedDealId(id);
+    if (deal) setSelectedCompanyId(deal.companyId);
+  };
 
   if (loading) {
     return (
@@ -663,17 +837,21 @@ export default function CRM({ user, profile, onLogout }) {
           .hoverRow:hover { background: #FAFAF9; }
           .navBtn:hover { background: #1c1c1c; }
           .iconBtn:hover { background: #F0EFEC; }
+          .sideItem:hover { background: #F0EFEC; }
           .spin { animation: spin 1s linear infinite; }
           @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         `}</style>
 
         <header style={S.header}>
           <Logo />
-          <nav style={{ display: "flex", gap: 6 }}>
+          <nav style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             <NavBtn active={tab === "dashboard"} onClick={() => setTab("dashboard")} icon={LayoutGrid} label="Pulpit" />
-            <NavBtn active={tab === "clients"} onClick={() => { setTab("clients"); setSelectedClientId(null); }} icon={Users} label="Klienci" />
+            <NavBtn active={tab === "companies"} onClick={() => { setTab("companies"); setSelectedCompanyId(null); setSelectedDealId(null); }} icon={Users} label="Kontakty" />
+            <NavBtn active={tab === "calendar"} onClick={() => setTab("calendar")} icon={Calendar} label="Kalendarz" />
             <NavBtn active={tab === "tasks"} onClick={() => setTab("tasks")} icon={ListChecks} label="Zadania" />
+            <NavBtn active={tab === "deals"} onClick={() => { setTab("deals"); setSelectedDealId(null); }} icon={Handshake} label="Szanse sprzedaży" />
             <NavBtn active={tab === "vehicles"} onClick={() => setTab("vehicles")} icon={Car} label="Pojazdy" />
+            <NavBtn active={tab === "stats"} onClick={() => setTab("stats")} icon={BarChart3} label="Statystyki" />
             {profile.role === "admin" && (
               <NavBtn active={tab === "settings"} onClick={() => setTab("settings")} icon={Settings} label="Ustawienia" />
             )}
@@ -704,60 +882,130 @@ export default function CRM({ user, profile, onLogout }) {
         <main style={S.main}>
           {tab === "dashboard" && (
             <Dashboard
-              clients={clients}
+              companies={companies}
+              deals={deals}
               tasks={upcomingTasks}
               goals={goals}
-              onOpenClient={(id) => { setSelectedClientId(id); setTab("clients"); }}
+              onOpenCompany={openCompany}
+              onOpenDeal={(id) => { openDeal(id); setTab("companies"); }}
             />
           )}
 
-          {tab === "clients" && !selectedClient && (
-            <ClientsList
-              clients={filteredClients}
+          {tab === "companies" && !selectedCompany && (
+            <CompaniesList
+              companies={filteredCompanies}
+              allCompanies={companies}
+              currentUserId={user.id}
+              allTags={allTags}
+              tagFilter={tagFilter}
+              setTagFilter={setTagFilter}
+              showFilter={companyShowFilter}
+              setShowFilter={setCompanyShowFilter}
               search={search}
               setSearch={setSearch}
-              statusFilter={statusFilter}
-              setStatusFilter={setStatusFilter}
-              onSelect={setSelectedClientId}
-              onAdd={() => { setEditingClient(null); setShowClientForm(true); }}
+              dealsByCompanyId={dealsByCompanyId}
+              tasks={tasks}
+              onSelect={openCompany}
+              onAdd={() => { setEditingCompany(null); setShowCompanyForm(true); }}
             />
           )}
 
-          {tab === "clients" && selectedClient && (
-            <ClientDetail
-              client={selectedClient}
-              tasks={tasks.filter((t) => t.clientId === selectedClient.id)}
-              activities={activities.filter((a) => a.clientId === selectedClient.id)}
-              products={products.filter((p) => p.clientId === selectedClient.id)}
-              costs={costs.filter((c) => c.clientId === selectedClient.id)}
-              relations={relations.filter((r) => r.clientId === selectedClient.id || r.relatedClientId === selectedClient.id)}
-              allClients={clients}
-              staffName={staffNameById[selectedClient.ownerId] || "—"}
-              onBack={() => setSelectedClientId(null)}
-              onEdit={() => { setEditingClient(selectedClient); setShowClientForm(true); }}
-              onDelete={() => removeClient(selectedClient.id)}
+          {tab === "companies" && selectedCompany && !selectedDeal && (
+            <CompanyDetail
+              company={selectedCompany}
+              deals={dealsByCompanyId[selectedCompany.id] || []}
+              activities={activities.filter((a) => a.companyId === selectedCompany.id)}
+              relations={relations.filter((r) => r.companyAId === selectedCompany.id || r.companyBId === selectedCompany.id)}
+              companiesById={companiesById}
+              staffName={staffNameById[selectedCompany.ownerId] || "—"}
+              onBack={() => setSelectedCompanyId(null)}
+              onEdit={() => { setEditingCompany(selectedCompany); setShowCompanyForm(true); }}
+              onDelete={() => removeCompany(selectedCompany.id)}
+              onAddActivity={(activity) => addActivity(activity)}
+              onDeleteActivity={(id) => removeActivity(id)}
+              onUpdateCompany={(patch) => upsertCompany({ ...selectedCompany, ...patch })}
+              onOpenDeal={openDeal}
+              onAddDeal={() => { setDealFormCompanyId(selectedCompany.id); setEditingDeal(null); setShowDealForm(true); }}
+              onAddRelation={(relation) => addRelation(relation)}
+              onDeleteRelation={(id) => removeRelation(id)}
+              allCompanies={companies}
+            />
+          )}
+
+          {tab === "companies" && selectedCompany && selectedDeal && (
+            <DealDetail
+              deal={selectedDeal}
+              company={selectedCompany}
+              tasks={taskMeta.filter((t) => t.dealId === selectedDeal.id)}
+              products={products.filter((p) => p.dealId === selectedDeal.id)}
+              costs={costs.filter((c) => c.dealId === selectedDeal.id)}
+              activities={activities.filter((a) => a.companyId === selectedCompany.id)}
+              onBack={() => setSelectedDealId(null)}
+              onEdit={() => { setEditingDeal(selectedDeal); setDealFormCompanyId(selectedCompany.id); setShowDealForm(true); }}
+              onDelete={() => removeDeal(selectedDeal.id)}
+              onUpdateDeal={(patch) => upsertDeal({ ...selectedDeal, ...patch })}
               onAddTask={(task) => upsertTask(task)}
               onToggleTask={(task) => upsertTask({ ...task, done: !task.done })}
               onDeleteTask={(id) => removeTask(id)}
-              onAddActivity={(activity) => addActivity(activity)}
-              onDeleteActivity={(id) => removeActivity(id)}
-              onUpdateClient={(patch) => upsertClient({ ...selectedClient, ...patch })}
-              onAddProduct={(p) => addProduct({ ...p, clientId: selectedClient.id })}
-              onRemoveProduct={(id) => removeProduct(id)}
-              onAddCost={(c) => addCost({ ...c, clientId: selectedClient.id })}
-              onRemoveCost={(id) => removeCost(id)}
-              onAddRelation={(r) => addRelation({ ...r, clientId: selectedClient.id })}
-              onRemoveRelation={(id) => removeRelation(id)}
-              onOpenClient={(id) => setSelectedClientId(id)}
+              onAddProduct={(p) => addProduct(p)}
+              onDeleteProduct={(id) => removeProduct(id)}
+              onAddCost={(c) => addCost(c)}
+              onDeleteCost={(id) => removeCost(id)}
+            />
+          )}
+
+          {tab === "calendar" && (
+            <CalendarView
+              tasks={taskMeta}
+              onOpenDeal={(id) => { openDeal(id); setTab("deals"); }}
             />
           )}
 
           {tab === "tasks" && (
             <TasksBoard
-              tasks={upcomingTasks}
-              doneTasks={doneTasksWithNames}
+              tasks={taskMeta}
               onToggleTask={(task) => upsertTask({ ...task, done: !task.done })}
-              onOpenClient={(id) => { setSelectedClientId(id); setTab("clients"); }}
+              onDeleteTask={(id) => removeTask(id)}
+              onOpenDeal={(id) => { openDeal(id); setTab("deals"); }}
+            />
+          )}
+
+          {tab === "deals" && !selectedDeal && (
+            <DealsList
+              deals={filteredDeals}
+              companiesById={companiesById}
+              products={products}
+              showFilter={dealShowFilter}
+              setShowFilter={setDealShowFilter}
+              statusFilter={dealStatusFilter}
+              setStatusFilter={setDealStatusFilter}
+              search={search}
+              setSearch={setSearch}
+              onSelect={openDeal}
+            />
+          )}
+
+          {tab === "deals" && selectedDeal && (
+            <DealDetail
+              deal={selectedDeal}
+              company={companiesById[selectedDeal.companyId]}
+              tasks={taskMeta.filter((t) => t.dealId === selectedDeal.id)}
+              products={products.filter((p) => p.dealId === selectedDeal.id)}
+              costs={costs.filter((c) => c.dealId === selectedDeal.id)}
+              activities={activities.filter((a) => a.companyId === selectedDeal.companyId)}
+              onBack={() => setSelectedDealId(null)}
+              onEdit={() => { setEditingDeal(selectedDeal); setDealFormCompanyId(selectedDeal.companyId); setShowDealForm(true); }}
+              onDelete={() => removeDeal(selectedDeal.id)}
+              onUpdateDeal={(patch) => upsertDeal({ ...selectedDeal, ...patch })}
+              onAddTask={(task) => upsertTask(task)}
+              onToggleTask={(task) => upsertTask({ ...task, done: !task.done })}
+              onDeleteTask={(id) => removeTask(id)}
+              onAddProduct={(p) => addProduct(p)}
+              onDeleteProduct={(id) => removeProduct(id)}
+              onAddCost={(c) => addCost(c)}
+              onDeleteCost={(id) => removeCost(id)}
+              onOpenCompany={openCompany}
+              showCompanyLink
             />
           )}
 
@@ -772,22 +1020,40 @@ export default function CRM({ user, profile, onLogout }) {
             />
           )}
 
+          {tab === "stats" && (
+            <StatystykiView deals={deals} companiesById={companiesById} products={products} />
+          )}
+
           {tab === "settings" && profile.role === "admin" && (
             <SettingsPanel user={user} goals={goals} onUpdateGoals={updateGoals} />
           )}
         </main>
 
-        {showClientForm && (
-          <ClientFormModal
-            initial={editingClient}
+        {showCompanyForm && (
+          <CompanyFormModal
+            initial={editingCompany}
             staff={staff}
             canReassign={profile.role === "admin"}
             currentUserId={user.id}
-            onClose={() => setShowClientForm(false)}
-            onSave={async (client) => {
-              const saved = await upsertClient(client);
-              setShowClientForm(false);
-              if (saved) setSelectedClientId(saved.id);
+            onClose={() => setShowCompanyForm(false)}
+            onSave={async (company) => {
+              const saved = await upsertCompany(company);
+              setShowCompanyForm(false);
+              if (saved) setSelectedCompanyId(saved.id);
+            }}
+          />
+        )}
+
+        {showDealForm && (
+          <DealFormModal
+            initial={editingDeal}
+            companyId={dealFormCompanyId}
+            currentUserId={user.id}
+            onClose={() => setShowDealForm(false)}
+            onSave={async (deal) => {
+              const saved = await upsertDeal(deal);
+              setShowDealForm(false);
+              if (saved) { setSelectedCompanyId(saved.companyId); setSelectedDealId(saved.id); }
             }}
           />
         )}
@@ -810,20 +1076,50 @@ export default function CRM({ user, profile, onLogout }) {
 function NavBtn({ active, onClick, icon: Icon, label }) {
   return (
     <button className="navBtn" onClick={onClick} style={{
-      display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 8, border: "none",
+      display: "flex", alignItems: "center", gap: 7, padding: "9px 13px", borderRadius: 8, border: "none",
       background: active ? "#111111" : "transparent", color: active ? "#fff" : "#111111",
-      fontSize: 13, fontWeight: 600, transition: "background .15s",
+      fontSize: 12.5, fontWeight: 600, transition: "background .15s", whiteSpace: "nowrap",
     }}>
-      <Icon size={15} /> {label}
+      <Icon size={14} /> {label}
     </button>
   );
 }
 
+/* ---------- Asystent: podpowiedzi dla szansy sprzedaży ---------- */
+function computeAssistantSuggestions(deal, company, activities = []) {
+  const suggestions = [];
+  if (!deal || deal.status !== "otwarta") return suggestions;
+  const pipeline = computePipeline(deal, company);
+  if (!pipeline.stages[0].done) {
+    suggestions.push({ id: "dane", text: "Uzupełnij brakujące dane klienta (telefon, e-mail, NIP, budżet, finansowanie)." });
+  }
+  const companyActivities = activities.filter((a) => a.companyId === (company && company.id));
+  const lastActivity = companyActivities.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+  const daysSinceContact = lastActivity ? Math.round((new Date() - new Date(lastActivity.createdAt)) / 86400000) : null;
+  if (daysSinceContact === null || daysSinceContact >= 7) {
+    suggestions.push({
+      id: "contact",
+      text: daysSinceContact === null
+        ? "Brak zarejestrowanego kontaktu z klientem — zadzwoń lub napisz."
+        : `Brak kontaktu od ${daysSinceContact} dni — czas na telefon.`,
+    });
+  }
+  const d = daysUntil(deal.decisionDate);
+  if (d !== null && d >= 0 && d <= 3 && pipeline.donePct < 100) {
+    suggestions.push({ id: "deadline", text: `Zbliża się termin decyzji (${d === 0 ? "dziś" : "za " + d + " dni"}) — przyspiesz proces sprzedaży.` });
+  }
+  if (pipeline.donePct >= 100) {
+    suggestions.push({ id: "close", text: "Wszystkie kroki procesu sprzedaży ukończone — oznacz szansę jako wygraną." });
+  }
+  return suggestions;
+}
+
 /* ---------- Dashboard ---------- */
-function Dashboard({ clients, tasks, goals, onOpenClient }) {
+function Dashboard({ companies, deals, tasks, goals, onOpenCompany, onOpenDeal }) {
   const urgent = tasks.filter((t) => t.days !== null && t.days <= 2);
-  const totalBudget = clients.reduce((sum, c) => sum + (Number(c.budget) || 0), 0);
-  const funnel = STATUSES.map((s) => ({ ...s, count: clients.filter((c) => c.status === s.key).length }));
+  const openDeals = deals.filter((d) => d.status === "otwarta");
+  const totalOpenBudget = openDeals.reduce((sum, d) => sum + (Number(d.budget) || 0), 0);
+  const funnel = DEAL_STATUSES.map((s) => ({ ...s, count: deals.filter((d) => d.status === s.key).length }));
   const maxCount = Math.max(1, ...funnel.map((f) => f.count));
 
   const now = new Date();
@@ -832,19 +1128,22 @@ function Dashboard({ clients, tasks, goals, onOpenClient }) {
     const dt = new Date(d);
     return dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth();
   };
-  const addedThisMonth = clients.filter((c) => isThisMonth(c.createdAt)).length;
-  const dealsThisMonth = clients.filter((c) => isThisMonth(c.createdAt) && c.status !== "utracony").length;
-  const openValue = clients
-    .filter((c) => c.status !== "sprzedane" && c.status !== "utracony")
-    .reduce((s, c) => s + (Number(c.budget) || 0), 0);
-  const wonThisMonth = clients.filter((c) => c.status === "sprzedane" && isThisMonth(c.statusChangedAt)).length;
-  const lostThisMonth = clients.filter((c) => c.status === "utracony" && isThisMonth(c.statusChangedAt)).length;
+  const addedThisMonth = companies.filter((c) => isThisMonth(c.createdAt)).length;
+  const dealsThisMonth = deals.filter((d) => isThisMonth(d.createdAt)).length;
+  const wonThisMonth = deals.filter((d) => d.status === "wygrana" && isThisMonth(d.statusChangedAt)).length;
+  const lostThisMonth = deals.filter((d) => d.status === "przegrana" && isThisMonth(d.statusChangedAt)).length;
   const daysLeft = daysLeftInMonth();
   const goalRows = [
-    { label: "Nowi klienci", value: addedThisMonth, target: goals.contactsTarget },
+    { label: "Nowe firmy / kontakty", value: addedThisMonth, target: goals.contactsTarget },
     { label: "Nowe szanse sprzedaży", value: dealsThisMonth, target: goals.dealsTarget },
-    { label: "Wartość otwartych szans", value: openValue, target: goals.valueTarget, isCurrency: true },
+    { label: "Wartość otwartych szans", value: totalOpenBudget, target: goals.valueTarget, isCurrency: true },
   ];
+
+  const companiesById = {};
+  companies.forEach((c) => { companiesById[c.id] = c; });
+  const suggestions = openDeals
+    .flatMap((d) => computeAssistantSuggestions(d, companiesById[d.companyId], []).map((s) => ({ ...s, deal: d, company: companiesById[d.companyId] })))
+    .slice(0, 6);
 
   return (
     <div style={S.stack}>
@@ -891,10 +1190,10 @@ function Dashboard({ clients, tasks, goals, onOpenClient }) {
       </section>
 
       <div style={S.statRow}>
-        <StatCard label="Klienci" value={clients.length} />
-        <StatCard label="Aktywne zadania" value={tasks.length} />
-        <StatCard label="Pilne (≤2 dni)" value={urgent.length} />
-        <StatCard label="Łączny budżet" value={`${totalBudget.toLocaleString("pl-PL")} zł`} />
+        <StatCard label="Firmy / kontakty" value={companies.length} />
+        <StatCard label="Otwarte szanse sprzedaży" value={openDeals.length} />
+        <StatCard label="Pilne zadania (≤2 dni)" value={urgent.length} />
+        <StatCard label="Wartość otwartych szans" value={fmtMoney(totalOpenBudget)} />
       </div>
 
       <div style={S.twoCol}>
@@ -918,11 +1217,11 @@ function Dashboard({ clients, tasks, goals, onOpenClient }) {
           {urgent.length === 0 && <EmptyNote text="Brak pilnych zadań." />}
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
             {urgent.slice(0, 6).map((t) => (
-              <button key={t.id} className="hoverRow" onClick={() => onOpenClient(t.clientId)} style={S.urgentRow}>
+              <button key={t.id} className="hoverRow" onClick={() => (t.dealId ? onOpenDeal(t.dealId) : onOpenCompany(t.clientId))} style={S.urgentRow}>
                 <Bell size={14} color="#E4241B" />
                 <div style={{ flex: 1, textAlign: "left" }}>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{t.title}</div>
-                  <div style={{ fontSize: 11, color: "#9A9A9A" }}>{t.clientName}</div>
+                  <div style={{ fontSize: 11, color: "#9A9A9A" }}>{t.companyName}{t.dealName ? " · " + t.dealName : ""}</div>
                 </div>
                 <ChevronRight size={14} color="#9A9A9A" />
               </button>
@@ -931,61 +1230,28 @@ function Dashboard({ clients, tasks, goals, onOpenClient }) {
         </section>
       </div>
 
-      <AssistantCard clients={clients} onOpenClient={onOpenClient} />
-    </div>
-  );
-}
-
-function computeAssistantSuggestions(clients) {
-  const suggestions = [];
-  const wonMissingReason = clients.filter((c) => c.status === "sprzedane" && !c.winReason);
-  if (wonMissingReason.length > 0) {
-    suggestions.push({
-      key: "win_reason",
-      text: `Uzupełnij powody wygrania sprzedaży (${wonMissingReason.length})`,
-      clients: wonMissingReason,
-    });
-  }
-  const lostMissingReason = clients.filter((c) => c.status === "utracony" && !c.lossReason);
-  if (lostMissingReason.length > 0) {
-    suggestions.push({
-      key: "loss_reason",
-      text: `Uzupełnij powody przegrania sprzedaży (${lostMissingReason.length})`,
-      clients: lostMissingReason,
-    });
-  }
-  const missingContact = clients.filter(
-    (c) => c.status !== "sprzedane" && c.status !== "utracony" && !c.contactPerson
-  );
-  if (missingContact.length > 0) {
-    suggestions.push({
-      key: "contact_person",
-      text: `Ustal osoby kontaktowe u swoich klientów (${missingContact.length})`,
-      clients: missingContact,
-    });
-  }
-  return suggestions;
-}
-
-function AssistantCard({ clients, onOpenClient }) {
-  const [dismissed, setDismissed] = useState([]);
-  const suggestions = computeAssistantSuggestions(clients).filter((s) => !dismissed.includes(s.key));
-  if (suggestions.length === 0) return null;
-  return (
-    <section style={S.card}>
-      <h3 style={S.cardTitle}>Asystent</h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-        {suggestions.map((s) => (
-          <div key={s.key} style={{ ...S.urgentRow, alignItems: "center" }}>
-            <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{s.text}</div>
-            <button onClick={() => onOpenClient(s.clients[0].id)} style={S.secondaryBtn}>Zrób to!</button>
-            <button onClick={() => setDismissed((d) => [...d, s.key])} style={{ background: "none", border: "none", display: "flex" }}>
-              <X size={14} color="#9A9A9A" />
-            </button>
+      <section style={S.card}>
+        <h3 style={{ ...S.cardTitle, display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkles size={15} color="#E4241B" /> Asystent — podpowiedzi
+        </h3>
+        {suggestions.length === 0 ? (
+          <EmptyNote text="Brak podpowiedzi — wszystkie otwarte szanse sprzedaży wyglądają dobrze." />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+            {suggestions.map((s, i) => (
+              <button key={s.deal.id + s.id + i} className="hoverRow" onClick={() => onOpenCompany(s.deal.companyId)} style={S.urgentRow}>
+                <Sparkles size={14} color="#E4241B" />
+                <div style={{ flex: 1, textAlign: "left" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{s.text}</div>
+                  <div style={{ fontSize: 11, color: "#9A9A9A" }}>{(s.company && s.company.name) || "—"} · {s.deal.name}</div>
+                </div>
+                <ChevronRight size={14} color="#9A9A9A" />
+              </button>
+            ))}
           </div>
-        ))}
-      </div>
-    </section>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -1011,110 +1277,187 @@ function EmptyNote({ text }) {
   return <div style={{ fontSize: 13, color: "#9A9A9A", marginTop: 10 }}>{text}</div>;
 }
 
-/* ---------- Clients list ---------- */
-function ClientsList({ clients, search, setSearch, statusFilter, setStatusFilter, onSelect, onAdd }) {
+/* ---------- Kontakty: lista firm w stylu "Kontaktów" ---------- */
+function SidebarItem({ active, onClick, label, count, disabled }) {
   return (
-    <div style={S.stack}>
-      <div style={S.toolbar}>
-        <div style={S.searchBox}>
-          <Search size={15} color="#9A9A9A" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Szukaj klienta, telefonu, e-maila, modelu…"
-            style={S.searchInput}
-          />
-        </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={S.select}>
-          <option value="all">Wszystkie statusy</option>
-          {STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-        </select>
-        <button onClick={onAdd} style={S.primaryBtn}>
-          <Plus size={15} /> Nowy klient
-        </button>
-      </div>
+    <button
+      className="sideItem"
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
+        background: active ? "#F0EFEC" : "none", border: "none", borderRadius: 6, padding: "7px 9px",
+        fontSize: 12.5, fontWeight: active ? 700 : 500, color: disabled ? "#C7C5C1" : "#111111",
+        textAlign: "left", cursor: disabled ? "not-allowed" : "pointer",
+      }}
+      title={disabled ? "Funkcja pojawi się w kolejnej aktualizacji" : undefined}
+    >
+      <span>{label}</span>
+      {count !== undefined && <span style={{ color: "#9A9A9A", fontWeight: 600, fontSize: 11.5 }}>{count}</span>}
+    </button>
+  );
+}
 
-      {clients.length === 0 ? (
-        <div style={{ ...S.card, textAlign: "center", padding: 48 }}>
-          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 18, marginBottom: 6 }}>Brak klientów</div>
-          <div style={{ fontSize: 13, color: "#9A9A9A", marginBottom: 16 }}>Dodaj pierwszego klienta, aby zacząć budować bazę.</div>
-          <button onClick={onAdd} style={{ ...S.primaryBtn, margin: "0 auto" }}><Plus size={15} /> Nowy klient</button>
-        </div>
-      ) : (
-        <div style={S.card}>
-          <div style={S.tableHeader}>
-            <span style={{ flex: 2 }}>Klient</span>
-            <span style={{ flex: 1.4 }}>Interesuje go</span>
-            <span style={{ flex: 1 }}>Budżet</span>
-            <span style={{ flex: 1.2 }}>Decyzja</span>
-            <span style={{ flex: 1.2 }}>Status</span>
-          </div>
-          {clients.map((c) => {
-            const d = daysUntil(c.decisionDate);
-            return (
-              <button key={c.id} className="hoverRow" onClick={() => onSelect(c.id)} style={S.tableRow}>
-                <span style={{ flex: 2, textAlign: "left" }}>
-                  <div style={{ fontWeight: 700, fontSize: 13.5 }}>{c.name}</div>
-                  <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{c.phone}</div>
-                  {c.tags && c.tags.length > 0 && (
-                    <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
-                      {c.tags.slice(0, 3).map((t) => (
-                        <span key={t} style={{ fontSize: 10, fontWeight: 700, background: "#F0EFEC", borderRadius: 10, padding: "2px 7px" }}>{t}</span>
-                      ))}
-                    </div>
-                  )}
-                </span>
-                <span style={{ flex: 1.4, fontSize: 13, textAlign: "left" }}>{c.carInterest || "—"}</span>
-                <span style={{ flex: 1, fontSize: 13, textAlign: "left" }}>{c.budget ? `${Number(c.budget).toLocaleString("pl-PL")} zł` : "—"}</span>
-                <span style={{ flex: 1.2, fontSize: 13, textAlign: "left", color: d !== null && d <= 2 ? "#E4241B" : "#111111", fontWeight: d !== null && d <= 2 ? 700 : 400 }}>
-                  {fmtDate(c.decisionDate)}
-                </span>
-                <span style={{ flex: 1.2, textAlign: "left" }}><StatusPill statusKey={c.status} /></span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+function SidebarSection({ title, children }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ ...S.label, marginBottom: 6, padding: "0 9px" }}>{title}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>{children}</div>
     </div>
   );
 }
 
-/* ---------- Client detail ---------- */
-function ClientDetail({
-  client, tasks, activities, products, costs, relations, allClients, staffName,
-  onBack, onEdit, onDelete, onAddTask, onToggleTask, onDeleteTask, onAddActivity, onDeleteActivity, onUpdateClient,
-  onAddProduct, onRemoveProduct, onAddCost, onRemoveCost, onAddRelation, onRemoveRelation, onOpenClient,
-}) {
-  const [newTaskType, setNewTaskType] = useState("call");
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskDate, setNewTaskDate] = useState("");
+function AzIndex({ letters, onJump }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2, position: "sticky", top: 20 }}>
+      {"ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((L) => {
+        const has = letters.has(L);
+        return (
+          <button
+            key={L}
+            onClick={() => has && onJump(L)}
+            disabled={!has}
+            style={{
+              background: "none", border: "none", fontSize: 10, fontWeight: 700, padding: "1px 4px",
+              color: has ? "#6B6B6B" : "#E7E5E2", cursor: has ? "pointer" : "default",
+            }}
+          >
+            {L}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
+function CompaniesList({
+  companies, allCompanies, currentUserId, allTags, tagFilter, setTagFilter,
+  showFilter, setShowFilter, search, setSearch, dealsByCompanyId, tasks, onSelect, onAdd,
+}) {
+  const tagCounts = useMemo(() => {
+    const map = {};
+    allTags.forEach((t) => { map[t] = allCompanies.filter((c) => (c.tags || []).includes(t)).length; });
+    return map;
+  }, [allTags, allCompanies]);
+
+  const mineCount = allCompanies.filter((c) => c.ownerId === currentUserId).length;
+
+  const letters = useMemo(() => {
+    const set = new Set();
+    companies.forEach((c) => { if (c.name) set.add(c.name[0].toUpperCase()); });
+    return set;
+  }, [companies]);
+
+  function jump(letter) {
+    const el = document.getElementById("company-letter-" + letter);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  let lastLetter = null;
+
+  return (
+    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
+      <aside style={{ width: 190, flexShrink: 0 }}>
+        <SidebarSection title="Pokaż">
+          <SidebarItem label="Moje" count={mineCount} active={showFilter === "mine"} onClick={() => setShowFilter("mine")} />
+          <SidebarItem label="Wszystkie" count={allCompanies.length} active={showFilter === "all"} onClick={() => setShowFilter("all")} />
+          <SidebarItem label="Obserwowane" disabled />
+          <SidebarItem label="Usunięte" disabled />
+        </SidebarSection>
+        <SidebarSection title="Tagi">
+          {allTags.length === 0 && <div style={{ fontSize: 11.5, color: "#9A9A9A", padding: "0 9px" }}>Brak tagów</div>}
+          {allTags.map((t) => (
+            <SidebarItem key={t} label={t} count={tagCounts[t]} active={tagFilter === t} onClick={() => setTagFilter(tagFilter === t ? null : t)} />
+          ))}
+        </SidebarSection>
+      </aside>
+
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={S.toolbar}>
+          <div style={S.searchBox}>
+            <Search size={15} color="#9A9A9A" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Szukaj firmy, telefonu, e-maila, NIP…"
+              style={S.searchInput}
+            />
+          </div>
+          <button style={S.secondaryBtn}><Filter size={13} /> Filtruj</button>
+          <button onClick={onAdd} style={S.primaryBtn}><Plus size={15} /> Nowa firma</button>
+        </div>
+
+        {companies.length === 0 ? (
+          <div style={{ ...S.card, textAlign: "center", padding: 48 }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 18, marginBottom: 6 }}>Brak firm / kontaktów</div>
+            <div style={{ fontSize: 13, color: "#9A9A9A", marginBottom: 16 }}>Dodaj pierwszą firmę, aby zacząć budować bazę.</div>
+            <button onClick={onAdd} style={{ ...S.primaryBtn, margin: "0 auto" }}><Plus size={15} /> Nowa firma</button>
+          </div>
+        ) : (
+          <div style={S.card}>
+            {companies.map((c) => {
+              const letter = (c.name || "?")[0].toUpperCase();
+              const showHeader = letter !== lastLetter;
+              lastLetter = letter;
+              const companyDeals = dealsByCompanyId[c.id] || [];
+              const taskCount = tasks.filter((t) => companyDeals.some((d) => d.id === t.dealId) || t.clientId === c.id).length;
+              return (
+                <React.Fragment key={c.id}>
+                  {showHeader && (
+                    <div id={"company-letter-" + letter} style={{ fontSize: 11, fontWeight: 700, color: "#9A9A9A", padding: "10px 14px 4px" }}>{letter}</div>
+                  )}
+                  <button className="hoverRow" onClick={() => onSelect(c.id)} style={S.tableRow}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 10, flex: 2, textAlign: "left" }}>
+                      <CompanyAvatar name={c.name} />
+                      <span>
+                        <div style={{ fontWeight: 700, fontSize: 13.5 }}>{c.name}</div>
+                        <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{c.phone || c.email || "—"}</div>
+                        {c.tags && c.tags.length > 0 && (
+                          <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+                            {c.tags.slice(0, 3).map((t) => (
+                              <span key={t} style={{ fontSize: 10, fontWeight: 700, background: "#F0EFEC", borderRadius: 10, padding: "2px 7px" }}>{t}</span>
+                            ))}
+                          </div>
+                        )}
+                      </span>
+                    </span>
+                    <span style={{ flex: 1, fontSize: 12, textAlign: "left", color: "#6B6B6B" }}>{fmtDate(c.createdAt)}</span>
+                    <span style={{ flex: 1.4, fontSize: 12, textAlign: "left", color: "#6B6B6B" }}>
+                      Zadania: {taskCount} · Szanse: {companyDeals.length}
+                    </span>
+                    <ChevronRight size={15} color="#9A9A9A" />
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div style={{ width: 20, flexShrink: 0 }}>
+        <AzIndex letters={letters} onJump={jump} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Company detail ---------- */
+function CompanyDetail({
+  company, deals, activities, relations, companiesById, staffName, onBack, onEdit, onDelete,
+  onAddActivity, onDeleteActivity, onUpdateCompany, onOpenDeal, onAddDeal, onAddRelation, onDeleteRelation, allCompanies,
+}) {
   const [newActivityType, setNewActivityType] = useState("note");
   const [newActivityTitle, setNewActivityTitle] = useState("");
   const [newActivityBody, setNewActivityBody] = useState("");
 
-  const sortedTasks = [...tasks].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
   const sortedActivities = [...(activities || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-  function submitTask(e) {
-    e.preventDefault();
-    if (!newTaskTitle.trim() || !newTaskDate) return;
-    onAddTask({
-      clientId: client.id,
-      type: newTaskType,
-      title: newTaskTitle.trim(),
-      dueDate: newTaskDate,
-      done: false,
-    });
-    setNewTaskTitle("");
-    setNewTaskDate("");
-  }
+  const sortedDeals = [...(deals || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   function submitActivity(e) {
     e.preventDefault();
     if (!newActivityTitle.trim()) return;
     onAddActivity({
-      clientId: client.id,
+      companyId: company.id,
       type: newActivityType,
       title: newActivityTitle.trim(),
       body: newActivityBody.trim(),
@@ -1123,88 +1466,67 @@ function ClientDetail({
     setNewActivityBody("");
   }
 
-  const probability = STATUS_PROBABILITY[client.status] ?? 0;
-
   return (
     <div style={S.stack}>
-      <button onClick={onBack} style={S.backBtn}>← Wszyscy klienci</button>
+      <button onClick={onBack} style={S.backBtn}>← Wszystkie firmy</button>
 
       <div style={S.twoCol}>
         <section style={{ ...S.card, flex: 1.3 }}>
-          <PinnedNoteBox note={client.pinnedNote} onSave={(v) => onUpdateClient({ pinnedNote: v })} />
+          <PinnedNoteBox note={company.pinnedNote} onSave={(v) => onUpdateCompany({ pinnedNote: v })} />
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 14 }}>
-            <div>
-              <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, fontWeight: 600 }}>{client.name}</div>
-              <div style={{ marginTop: 6, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                <StatusPill statusKey={client.status} />
-                <span style={{ fontSize: 11.5, color: "#9A9A9A" }}>Opiekun: <strong style={{ color: "#111111" }}>{staffName}</strong></span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <CompanyAvatar name={company.name} size={44} />
+              <div>
+                <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, fontWeight: 600 }}>{company.name}</div>
+                <div style={{ marginTop: 6, fontSize: 11.5, color: "#9A9A9A" }}>Opiekun: <strong style={{ color: "#111111" }}>{staffName}</strong></div>
               </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={onEdit} style={S.secondaryBtn}>Edytuj</button>
-              <button onClick={onDelete} style={S.dangerBtn}><Trash2 size={14} /></button>
+              <button onClick={() => { if (window.confirm("Usunąć tę firmę wraz ze wszystkimi jej szansami sprzedaży?")) onDelete(); }} style={S.dangerBtn}><Trash2 size={14} /></button>
             </div>
           </div>
 
           <div style={{ marginTop: 14 }}>
-            <TagsEditor tags={client.tags || []} onChange={(tags) => onUpdateClient({ tags })} />
+            <TagsEditor tags={company.tags || []} onChange={(tags) => onUpdateCompany({ tags })} />
           </div>
 
           <div style={S.detailGrid}>
-            <DetailRow icon={Phone} label="Telefon" value={client.phone} />
-            <DetailRow icon={Mail} label="E-mail" value={client.email} />
-            <DetailRow icon={MapPin} label="Adres" value={client.address} />
-            <DetailRow icon={Building2} label="NIP" value={client.nip} />
-            <DetailRow icon={UserPlus} label="Osoba kontaktowa" value={client.contactPerson} />
-            <DetailRow icon={Tag} label="Źródło pozyskania" value={client.source} />
-            <DetailRow icon={Car} label="Model / auto" value={client.carInterest} />
-            <DetailRow icon={Wallet} label="Budżet" value={client.budget ? `${Number(client.budget).toLocaleString("pl-PL")} zł` : "—"} />
-            <DetailRow icon={Handshake} label="Finansowanie" value={client.financing} />
-            <DetailRow icon={CalendarClock} label="Decyzja do" value={fmtDate(client.decisionDate)} />
+            <DetailRow icon={Phone} label="Telefon" value={company.phone} />
+            <DetailRow icon={Mail} label="E-mail" value={company.email} />
+            <DetailRow icon={MapPin} label="Adres" value={company.address} />
+            <DetailRow icon={Building2} label="NIP" value={company.nip} />
+            <DetailRow icon={UserPlus} label="Osoba kontaktowa" value={company.contactPerson} />
+            <DetailRow icon={Tag} label="Źródło pozyskania" value={company.source} />
           </div>
 
-          {client.notes && (
+          {company.notes && (
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E7E5E2" }}>
               <div style={S.label}>Notatki</div>
-              <div style={{ fontSize: 13.5, marginTop: 4, lineHeight: 1.5 }}>{client.notes}</div>
+              <div style={{ fontSize: 13.5, marginTop: 4, lineHeight: 1.5 }}>{company.notes}</div>
             </div>
           )}
         </section>
 
         <section style={{ ...S.card, flex: 1 }}>
-          <h3 style={S.cardTitle}>Zadania</h3>
-          <form onSubmit={submitTask} style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-            <select value={newTaskType} onChange={(e) => setNewTaskType(e.target.value)} style={S.select}>
-              {Object.entries(TASK_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-            <input
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              placeholder="np. Zadzwonić w sprawie oferty"
-              style={S.input}
-            />
-            <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} style={S.input} />
-            <button type="submit" style={S.primaryBtn}><Plus size={14} /> Dodaj zadanie</button>
-          </form>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 16 }}>
-            {sortedTasks.length === 0 && <EmptyNote text="Brak zadań dla tego klienta." />}
-            {sortedTasks.map((t) => {
-              const Icon = TASK_TYPES[t.type]?.icon || Bell;
-              const d = daysUntil(t.dueDate);
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3 style={S.cardTitle}>Szanse sprzedaży</h3>
+            <button onClick={onAddDeal} style={{ ...S.secondaryBtn, display: "flex", alignItems: "center", gap: 6 }}><Plus size={13} /> Nowa</button>
+          </div>
+          {sortedDeals.length === 0 && <EmptyNote text="Ta firma nie ma jeszcze żadnej szansy sprzedaży." />}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+            {sortedDeals.map((d) => {
+              const pct = dealProbability(d, company);
               return (
-                <div key={t.id} style={{ ...S.urgentRow, opacity: t.done ? 0.5 : 1 }}>
-                  <button onClick={() => onToggleTask(t)} style={{ background: "none", border: "none", display: "flex" }}>
-                    {t.done ? <CheckCircle2 size={17} color="#1C8A4B" /> : <Circle size={17} color="#B7B5B1" />}
-                  </button>
-                  <Icon size={14} color="#6B6B6B" />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, textDecoration: t.done ? "line-through" : "none" }}>{t.title}</div>
-                    <div style={{ fontSize: 11, color: "#9A9A9A" }}>{fmtDate(t.dueDate)}{!t.done && d !== null && d <= 2 ? " · pilne" : ""}</div>
+                <button key={d.id} className="hoverRow" onClick={() => onOpenDeal(d.id)} style={S.urgentRow}>
+                  <div style={{ flex: 1, textAlign: "left" }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{d.name}</div>
+                    <div style={{ fontSize: 11, color: "#9A9A9A" }}>{d.carInterest || "—"} · {pct}%</div>
                   </div>
-                  <button onClick={() => onDeleteTask(t.id)} className="iconBtn" style={S.iconBtnStyle}><X size={14} color="#9A9A9A" /></button>
-                </div>
+                  <DealStatusPill statusKey={d.status} />
+                  <ChevronRight size={14} color="#9A9A9A" />
+                </button>
               );
             })}
           </div>
@@ -1237,7 +1559,7 @@ function ClientDetail({
           </form>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-            {sortedActivities.length === 0 && <EmptyNote text="Brak historii kontaktu z tym klientem." />}
+            {sortedActivities.length === 0 && <EmptyNote text="Brak historii kontaktu z tą firmą." />}
             {sortedActivities.map((a) => {
               const Icon = TASK_TYPES[a.type]?.icon || Bell;
               return (
@@ -1258,254 +1580,504 @@ function ClientDetail({
         </section>
 
         <section style={{ ...S.card, flex: 1 }}>
-          <h3 style={S.cardTitle}>Postęp sprzedaży</h3>
-          <div style={{ marginTop: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B6B6B", fontWeight: 600, marginBottom: 6 }}>
-              <span>Prawdopodobieństwo sprzedaży</span>
-              <span style={{ color: "#111111", fontWeight: 700 }}>{probability}%</span>
-            </div>
-            <div style={{ background: "#F0EFEC", borderRadius: 6, height: 8, overflow: "hidden" }}>
-              <div style={{ width: `${probability}%`, background: "#E4241B", height: "100%", borderRadius: 6 }} />
-            </div>
-          </div>
-
-          <div style={{ marginTop: 22 }}>
-            <SalesProcessCard key={client.id} client={client} onUpdateClient={onUpdateClient} />
-          </div>
-        </section>
-      </div>
-
-      <div style={S.twoCol}>
-        <section style={{ ...S.card, flex: 1.3 }}>
-          <h3 style={S.cardTitle}>Produkty i koszty</h3>
-          <div style={{ marginTop: 12 }}>
-            <ProductsCostsCard
-              products={products}
-              costs={costs}
-              onAddProduct={onAddProduct}
-              onRemoveProduct={onRemoveProduct}
-              onAddCost={onAddCost}
-              onRemoveCost={onRemoveCost}
-            />
-          </div>
-        </section>
-
-        <section style={{ ...S.card, flex: 1 }}>
-          <h3 style={S.cardTitle}>Powiązania</h3>
-          <div style={{ marginTop: 12 }}>
-            <RelationsCard
-              relations={relations}
-              client={client}
-              allClients={allClients}
-              onAddRelation={onAddRelation}
-              onRemoveRelation={onRemoveRelation}
-              onOpenClient={onOpenClient}
-            />
-          </div>
+          <h3 style={{ ...S.cardTitle, display: "flex", alignItems: "center", gap: 8 }}><Link2 size={15} /> Powiązania</h3>
+          <RelationsCard
+            company={company}
+            relations={relations}
+            companiesById={companiesById}
+            allCompanies={allCompanies}
+            onAdd={onAddRelation}
+            onDelete={onDeleteRelation}
+          />
         </section>
       </div>
     </div>
   );
 }
 
-/* ---------- Produkty / Koszty / Zysk / Marża ---------- */
-function ProductsCostsCard({ products, costs, onAddProduct, onRemoveProduct, onAddCost, onRemoveCost }) {
-  const [tab, setTab] = useState("produkty");
-  const [prodName, setProdName] = useState("");
-  const [prodQty, setProdQty] = useState("1");
-  const [prodPrice, setProdPrice] = useState("");
-  const [costName, setCostName] = useState("");
-  const [costAmount, setCostAmount] = useState("");
-
-  const revenue = products.reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unitPrice) || 0), 0);
-  const totalCosts = costs.reduce((s, c) => s + (Number(c.amount) || 0), 0);
-  const profit = revenue - totalCosts;
-  const margin = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
-
-  function submitProduct(e) {
-    e.preventDefault();
-    if (!prodName.trim()) return;
-    onAddProduct({ name: prodName.trim(), quantity: Number(prodQty) || 1, unitPrice: Number(prodPrice) || 0 });
-    setProdName(""); setProdQty("1"); setProdPrice("");
-  }
-  function submitCost(e) {
-    e.preventDefault();
-    if (!costName.trim()) return;
-    onAddCost({ name: costName.trim(), amount: Number(costAmount) || 0 });
-    setCostName(""); setCostAmount("");
-  }
-
-  const TABS = [
-    { key: "produkty", label: "Produkty" },
-    { key: "koszty", label: "Koszty" },
-    { key: "zysk", label: "Zysk" },
-    { key: "marza", label: "Marża" },
-  ];
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            style={{
-              padding: "6px 12px", borderRadius: 8, border: "none", fontSize: 12, fontWeight: 700,
-              background: tab === t.key ? "#111111" : "#F0EFEC", color: tab === t.key ? "#fff" : "#111111",
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "produkty" && (
-        <div>
-          <form onSubmit={submitProduct} style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-            <input value={prodName} onChange={(e) => setProdName(e.target.value)} placeholder="Nazwa produktu" style={{ ...S.input, flex: 2, minWidth: 140 }} />
-            <input value={prodQty} onChange={(e) => setProdQty(e.target.value)} type="number" placeholder="Ilość" style={{ ...S.input, width: 80 }} />
-            <input value={prodPrice} onChange={(e) => setProdPrice(e.target.value)} type="number" placeholder="Cena (zł)" style={{ ...S.input, width: 110 }} />
-            <button type="submit" style={S.primaryBtn}><Plus size={14} /></button>
-          </form>
-          {products.length === 0 && <EmptyNote text="Brak dodanych produktów." />}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {products.map((p) => (
-              <div key={p.id} style={S.urgentRow}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div>
-                  <div style={{ fontSize: 11, color: "#9A9A9A" }}>{p.quantity} × {Number(p.unitPrice).toLocaleString("pl-PL")} zł</div>
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{(p.quantity * p.unitPrice).toLocaleString("pl-PL")} zł</div>
-                <button onClick={() => onRemoveProduct(p.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {tab === "koszty" && (
-        <div>
-          <form onSubmit={submitCost} style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-            <input value={costName} onChange={(e) => setCostName(e.target.value)} placeholder="Nazwa kosztu" style={{ ...S.input, flex: 2, minWidth: 140 }} />
-            <input value={costAmount} onChange={(e) => setCostAmount(e.target.value)} type="number" placeholder="Kwota (zł)" style={{ ...S.input, width: 110 }} />
-            <button type="submit" style={S.primaryBtn}><Plus size={14} /></button>
-          </form>
-          {costs.length === 0 && <EmptyNote text="Brak dodanych kosztów." />}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {costs.map((c) => (
-              <div key={c.id} style={S.urgentRow}>
-                <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{c.name}</div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{Number(c.amount).toLocaleString("pl-PL")} zł</div>
-                <button onClick={() => onRemoveCost(c.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {tab === "zysk" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-            <span>Przychód (produkty)</span><strong>{revenue.toLocaleString("pl-PL")} zł</strong>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-            <span>Koszty</span><strong>{totalCosts.toLocaleString("pl-PL")} zł</strong>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, paddingTop: 8, borderTop: "1px solid #E7E5E2" }}>
-            <span style={{ fontWeight: 700 }}>Zysk</span>
-            <strong style={{ color: profit >= 0 ? "#1C8A4B" : "#E4241B" }}>{profit.toLocaleString("pl-PL")} zł</strong>
-          </div>
-        </div>
-      )}
-
-      {tab === "marza" && (
-        <div>
-          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 36, fontWeight: 600, color: margin >= 0 ? "#1C8A4B" : "#E4241B" }}>{margin}%</div>
-          <div style={{ fontSize: 12, color: "#9A9A9A", marginTop: 4 }}>Marża liczona jako zysk / przychód z produktów.</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ---------- Powiązania między klientami ---------- */
-function RelationsCard({ relations, client, allClients, onAddRelation, onRemoveRelation, onOpenClient }) {
-  const [picking, setPicking] = useState(false);
+function RelationsCard({ company, relations, companiesById, allCompanies, onAdd, onDelete }) {
   const [targetId, setTargetId] = useState("");
+  const [relType, setRelType] = useState(RELATION_TYPES[0]);
   const [note, setNote] = useState("");
 
-  const otherClients = allClients.filter((c) => c.id !== client.id);
+  const others = allCompanies.filter((c) => c.id !== company.id);
 
   function submit(e) {
     e.preventDefault();
     if (!targetId) return;
-    onAddRelation({ relatedClientId: targetId, note: note.trim() });
-    setTargetId(""); setNote(""); setPicking(false);
+    onAdd({ companyAId: company.id, companyBId: targetId, relationType: relType, note: note.trim() });
+    setTargetId("");
+    setNote("");
   }
 
   return (
     <div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {relations.length === 0 && !picking && <EmptyNote text="Brak powiązanych klientów." />}
+      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+        <select value={targetId} onChange={(e) => setTargetId(e.target.value)} style={S.select}>
+          <option value="">— wybierz firmę —</option>
+          {others.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={relType} onChange={(e) => setRelType(e.target.value)} style={S.select}>
+          {RELATION_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Notatka (opcjonalnie)" style={S.input} />
+        <button type="submit" style={S.primaryBtn}><Plus size={14} /> Dodaj powiązanie</button>
+      </form>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 14 }}>
+        {relations.length === 0 && <EmptyNote text="Brak powiązań z innymi firmami." />}
         {relations.map((r) => {
-          const otherId = r.clientId === client.id ? r.relatedClientId : r.clientId;
-          const other = allClients.find((c) => c.id === otherId);
+          const otherId = r.companyAId === company.id ? r.companyBId : r.companyAId;
+          const other = companiesById[otherId];
           return (
-            <div key={r.id} style={S.urgentRow}>
-              <button onClick={() => onOpenClient(otherId)} style={{ flex: 1, background: "none", border: "none", textAlign: "left" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#E4241B" }}>{other ? other.name : "—"}</div>
-                {r.note && <div style={{ fontSize: 11, color: "#9A9A9A" }}>{r.note}</div>}
-              </button>
-              <button onClick={() => onRemoveRelation(r.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+            <div key={r.id} style={{ ...S.urgentRow }}>
+              <Link2 size={13} color="#6B6B6B" />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{(other && other.name) || "—"}</div>
+                <div style={{ fontSize: 11, color: "#9A9A9A" }}>{r.relationType}{r.note ? " · " + r.note : ""}</div>
+              </div>
+              <button onClick={() => onDelete(r.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
             </div>
           );
         })}
       </div>
+    </div>
+  );
+}
 
-      {picking ? (
-        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
-          <select value={targetId} onChange={(e) => setTargetId(e.target.value)} style={S.select}>
-            <option value="">— wybierz klienta —</option>
-            {otherClients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Notatka (opcjonalnie)" style={S.input} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" onClick={() => setPicking(false)} style={S.secondaryBtn}>Anuluj</button>
-            <button type="submit" style={S.primaryBtn}>Połącz</button>
+/* ---------- Szanse sprzedaży: lista z panelem filtrów ---------- */
+function DealsList({
+  deals, companiesById, products, showFilter, setShowFilter, statusFilter, setStatusFilter, search, setSearch, onSelect,
+}) {
+  const statusCounts = useMemo(() => {
+    const map = {};
+    DEAL_STATUSES.forEach((s) => { map[s.key] = deals.filter((d) => d.status === s.key).length; });
+    return map;
+  }, [deals]);
+
+  const openDeals = deals.filter((d) => d.status === "otwarta");
+  const wonDeals = deals.filter((d) => d.status === "wygrana");
+  const forecast = openDeals.reduce((sum, d) => sum + (Number(d.budget) || 0) * (dealProbability(d, companiesById[d.companyId]) / 100), 0);
+  const realized = wonDeals.reduce((sum, d) => sum + (Number(d.budget) || 0), 0);
+  const productCount = products.length;
+
+  const letters = useMemo(() => {
+    const set = new Set();
+    deals.forEach((d) => { if (d.name) set.add(d.name[0].toUpperCase()); });
+    return set;
+  }, [deals]);
+
+  function jump(letter) {
+    const el = document.getElementById("deal-letter-" + letter);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  let lastLetter = null;
+
+  return (
+    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
+      <aside style={{ width: 190, flexShrink: 0 }}>
+        <SidebarSection title="Pokaż">
+          <SidebarItem label="Moje" active={showFilter === "mine"} onClick={() => setShowFilter("mine")} />
+          <SidebarItem label="Wszystkie" active={showFilter === "all"} onClick={() => setShowFilter("all")} />
+          <SidebarItem label="Biorę udział" disabled />
+          <SidebarItem label="Obserwowane" disabled />
+          <SidebarItem label="Usunięte" disabled />
+        </SidebarSection>
+        <SidebarSection title="Status">
+          <SidebarItem label="Wszystkie" count={deals.length} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
+          {DEAL_STATUSES.map((s) => (
+            <button
+              key={s.key}
+              className="sideItem"
+              onClick={() => setStatusFilter(s.key)}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
+                background: statusFilter === s.key ? "#F0EFEC" : "none", border: "none", borderRadius: 6, padding: "7px 9px",
+                fontSize: 12.5, fontWeight: statusFilter === s.key ? 700 : 500, textAlign: "left",
+              }}
+            >
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />
+                {s.label}
+              </span>
+              <span style={{ color: "#9A9A9A", fontWeight: 600, fontSize: 11.5 }}>{statusCounts[s.key] || 0}</span>
+            </button>
+          ))}
+        </SidebarSection>
+        <SidebarSection title="Podsumowanie">
+          <div style={{ padding: "0 9px", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 10.5, color: "#9A9A9A", fontWeight: 700 }}>Prognoza</div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{fmtMoney(forecast)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10.5, color: "#9A9A9A", fontWeight: 700 }}>Ilość otwartych</div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{openDeals.length}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10.5, color: "#9A9A9A", fontWeight: 700 }}>Realizacja</div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{fmtMoney(realized)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10.5, color: "#9A9A9A", fontWeight: 700 }}>Ilość wygranych</div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{wonDeals.length}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10.5, color: "#9A9A9A", fontWeight: 700 }}>Produkty łącznie</div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{productCount}</div>
+            </div>
           </div>
-        </form>
-      ) : (
-        <button type="button" onClick={() => setPicking(true)} style={{ ...S.secondaryBtn, marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <Plus size={13} /> Dodaj powiązanie
-        </button>
-      )}
+        </SidebarSection>
+      </aside>
+
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={S.toolbar}>
+          <div style={S.searchBox}>
+            <Search size={15} color="#9A9A9A" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Szukaj szansy sprzedaży, firmy, modelu…"
+              style={S.searchInput}
+            />
+          </div>
+          <button style={S.secondaryBtn}><Filter size={13} /> Filtruj</button>
+        </div>
+
+        {deals.length === 0 ? (
+          <div style={{ ...S.card, textAlign: "center", padding: 48 }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 18, marginBottom: 6 }}>Brak szans sprzedaży</div>
+            <div style={{ fontSize: 13, color: "#9A9A9A" }}>Otwórz firmę i dodaj jej pierwszą szansę sprzedaży.</div>
+          </div>
+        ) : (
+          <div style={S.card}>
+            {deals.map((d) => {
+              const company = companiesById[d.companyId];
+              const letter = (d.name || "?")[0].toUpperCase();
+              const showHeader = letter !== lastLetter;
+              lastLetter = letter;
+              const pct = dealProbability(d, company);
+              const dd = daysUntil(d.decisionDate);
+              return (
+                <React.Fragment key={d.id}>
+                  {showHeader && (
+                    <div id={"deal-letter-" + letter} style={{ fontSize: 11, fontWeight: 700, color: "#9A9A9A", padding: "10px 14px 4px" }}>{letter}</div>
+                  )}
+                  <button className="hoverRow" onClick={() => onSelect(d.id)} style={S.tableRow}>
+                    <span style={{ flex: 2, textAlign: "left" }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5 }}>{d.name}</div>
+                      <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{(company && company.name) || "—"}</div>
+                    </span>
+                    <span style={{ flex: 1, fontSize: 13, textAlign: "left" }}>{d.budget ? fmtMoney(d.budget) : "—"}</span>
+                    <span style={{ flex: 1, fontSize: 13, textAlign: "left" }}>{pct}%</span>
+                    <span style={{ flex: 1.2, fontSize: 13, textAlign: "left", color: dd !== null && dd <= 2 ? "#E4241B" : "#111111", fontWeight: dd !== null && dd <= 2 ? 700 : 400 }}>
+                      {fmtDate(d.decisionDate)}
+                    </span>
+                    <span style={{ flex: 1.2, textAlign: "left" }}><DealStatusPill statusKey={d.status} /></span>
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div style={{ width: 20, flexShrink: 0 }}>
+        <AzIndex letters={letters} onJump={jump} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Deal detail (Szansa sprzedaży) ---------- */
+function DealDetail({
+  deal, company, tasks, products, costs, activities, onBack, onEdit, onDelete, onUpdateDeal,
+  onAddTask, onToggleTask, onDeleteTask, onAddProduct, onDeleteProduct, onAddCost, onDeleteCost,
+  onOpenCompany, showCompanyLink,
+}) {
+  const [newTaskType, setNewTaskType] = useState("call");
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDate, setNewTaskDate] = useState("");
+  const [reasonDraft, setReasonDraft] = useState(deal.status === "wygrana" ? deal.winReason : deal.lossReason);
+
+  useEffect(() => {
+    setReasonDraft(deal.status === "wygrana" ? deal.winReason : deal.lossReason);
+  }, [deal.id, deal.status]);
+
+  const sortedTasks = [...tasks].sort((a, b) => new Date(a.dueDate || 0) - new Date(b.dueDate || 0));
+  const pct = dealProbability(deal, company);
+  const suggestions = computeAssistantSuggestions(deal, company, activities);
+
+  function submitTask(e) {
+    e.preventDefault();
+    if (!newTaskTitle.trim() || !newTaskDate) return;
+    onAddTask({
+      dealId: deal.id,
+      clientId: company ? company.id : null,
+      type: newTaskType,
+      title: newTaskTitle.trim(),
+      dueDate: newTaskDate,
+      done: false,
+    });
+    setNewTaskTitle("");
+    setNewTaskDate("");
+  }
+
+  function saveReason() {
+    if (deal.status === "wygrana") onUpdateDeal({ winReason: reasonDraft });
+    else if (deal.status === "przegrana") onUpdateDeal({ lossReason: reasonDraft });
+  }
+
+  return (
+    <div style={S.stack}>
+      <button onClick={onBack} style={S.backBtn}>← Wszystkie szanse sprzedaży</button>
+
+      <div style={S.twoCol}>
+        <section style={{ ...S.card, flex: 1.3 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, fontWeight: 600 }}>{deal.name}</div>
+              <div style={{ marginTop: 6, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <DealStatusPill statusKey={deal.status} />
+                {company && (
+                  showCompanyLink ? (
+                    <button onClick={() => onOpenCompany(company.id)} style={{ background: "none", border: "none", fontSize: 11.5, color: "#E4241B", fontWeight: 700, padding: 0 }}>
+                      {company.name}
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: 11.5, color: "#9A9A9A" }}>Firma: <strong style={{ color: "#111111" }}>{company.name}</strong></span>
+                  )
+                )}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={onEdit} style={S.secondaryBtn}>Edytuj</button>
+              <button onClick={() => { if (window.confirm("Usunąć tę szansę sprzedaży?")) onDelete(); }} style={S.dangerBtn}><Trash2 size={14} /></button>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+            {DEAL_STATUSES.map((s) => (
+              <button
+                key={s.key}
+                onClick={() => onUpdateDeal({ status: s.key })}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, border: deal.status === s.key ? `1px solid ${s.color}` : "1px solid #E7E5E2",
+                  background: deal.status === s.key ? `${s.color}14` : "#fff", borderRadius: 20, padding: "5px 11px",
+                  fontSize: 11.5, fontWeight: 700, color: s.color,
+                }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} /> {s.label}
+              </button>
+            ))}
+          </div>
+
+          {(deal.status === "wygrana" || deal.status === "przegrana") && (
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #E7E5E2" }}>
+              <div style={S.label}>{deal.status === "wygrana" ? "Powód wygranej" : "Powód przegranej"}</div>
+              <textarea
+                value={reasonDraft || ""}
+                onChange={(e) => setReasonDraft(e.target.value)}
+                onBlur={saveReason}
+                rows={2}
+                style={{ ...S.input, resize: "vertical", marginTop: 6 }}
+                placeholder="Np. cena, konkurencja, brak kontaktu, finansowanie…"
+              />
+            </div>
+          )}
+
+          <div style={S.detailGrid}>
+            <DetailRow icon={Car} label="Model / auto" value={deal.carInterest} />
+            <DetailRow icon={Wallet} label="Budżet" value={deal.budget ? fmtMoney(deal.budget) : "—"} />
+            <DetailRow icon={Handshake} label="Finansowanie" value={deal.financing} />
+            <DetailRow icon={CalendarClock} label="Decyzja do" value={fmtDate(deal.decisionDate)} />
+            <DetailRow icon={Tag} label="Rodzaj zakupu" value={deal.purchaseType} />
+            <DetailRow icon={Users} label="Widoczność" value={deal.visibility} />
+          </div>
+
+          {deal.notes && (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E7E5E2" }}>
+              <div style={S.label}>Notatki</div>
+              <div style={{ fontSize: 13.5, marginTop: 4, lineHeight: 1.5 }}>{deal.notes}</div>
+            </div>
+          )}
+        </section>
+
+        <section style={{ ...S.card, flex: 1 }}>
+          <div style={{ marginTop: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B6B6B", fontWeight: 600, marginBottom: 6 }}>
+              <span>Prawdopodobieństwo sprzedaży</span>
+              <span style={{ color: "#111111", fontWeight: 700 }}>{pct}%</span>
+            </div>
+            <div style={{ background: "#F0EFEC", borderRadius: 6, height: 8, overflow: "hidden" }}>
+              <div style={{ width: `${pct}%`, background: "#E4241B", height: "100%", borderRadius: 6 }} />
+            </div>
+          </div>
+
+          <div style={{ marginTop: 22 }}>
+            <SalesProcessCard key={deal.id} deal={deal} company={company} onUpdateDeal={onUpdateDeal} />
+          </div>
+
+          {suggestions.length > 0 && (
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #E7E5E2" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
+                <Sparkles size={14} color="#E4241B" /> Asystent
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {suggestions.map((s) => (
+                  <div key={s.id} style={{ fontSize: 12.5, background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "8px 10px" }}>
+                    {s.text}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div style={S.twoCol}>
+        <section style={{ ...S.card, flex: 1 }}>
+          <h3 style={{ ...S.cardTitle, display: "flex", alignItems: "center", gap: 8 }}><Package size={15} /> Produkty i koszty</h3>
+          <ProductsCostsCard
+            deal={deal}
+            products={products}
+            costs={costs}
+            onAddProduct={onAddProduct}
+            onDeleteProduct={onDeleteProduct}
+            onAddCost={onAddCost}
+            onDeleteCost={onDeleteCost}
+          />
+        </section>
+
+        <section style={{ ...S.card, flex: 1 }}>
+          <h3 style={S.cardTitle}>Zadania</h3>
+          <form onSubmit={submitTask} style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+            <select value={newTaskType} onChange={(e) => setNewTaskType(e.target.value)} style={S.select}>
+              {Object.entries(TASK_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+            <input
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+              placeholder="np. Zadzwonić w sprawie oferty"
+              style={S.input}
+            />
+            <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} style={S.input} />
+            <button type="submit" style={S.primaryBtn}><Plus size={14} /> Dodaj zadanie</button>
+          </form>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 16 }}>
+            {sortedTasks.length === 0 && <EmptyNote text="Brak zadań dla tej szansy sprzedaży." />}
+            {sortedTasks.map((t) => {
+              const Icon = TASK_TYPES[t.type]?.icon || Bell;
+              const d = daysUntil(t.dueDate);
+              return (
+                <div key={t.id} style={{ ...S.urgentRow, opacity: t.done ? 0.5 : 1 }}>
+                  <button onClick={() => onToggleTask(t)} style={{ background: "none", border: "none", display: "flex" }}>
+                    {t.done ? <CheckCircle2 size={17} color="#1C8A4B" /> : <Circle size={17} color="#B7B5B1" />}
+                  </button>
+                  <Icon size={14} color="#6B6B6B" />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, textDecoration: t.done ? "line-through" : "none" }}>{t.title}</div>
+                    <div style={{ fontSize: 11, color: "#9A9A9A" }}>{fmtDate(t.dueDate)}{!t.done && d !== null && d <= 2 ? " · pilne" : ""}</div>
+                  </div>
+                  <button onClick={() => onDeleteTask(t.id)} className="iconBtn" style={S.iconBtnStyle}><X size={14} color="#9A9A9A" /></button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function ProductsCostsCard({ deal, products, costs, onAddProduct, onDeleteProduct, onAddCost, onDeleteCost }) {
+  const [pName, setPName] = useState("");
+  const [pQty, setPQty] = useState("1");
+  const [pUnit, setPUnit] = useState("");
+  const [pCost, setPCost] = useState("");
+  const [cName, setCName] = useState("");
+  const [cAmount, setCAmount] = useState("");
+
+  const revenue = products.reduce((s, p) => s + (Number(p.unitPrice) || 0) * (Number(p.quantity) || 0), 0);
+  const productCost = products.reduce((s, p) => s + (Number(p.costPrice) || 0) * (Number(p.quantity) || 0), 0);
+  const totalCosts = costs.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const margin = revenue - productCost - totalCosts;
+  const marginPct = revenue > 0 ? Math.round((margin / revenue) * 100) : 0;
+
+  function submitProduct(e) {
+    e.preventDefault();
+    if (!pName.trim()) return;
+    onAddProduct({ dealId: deal.id, name: pName.trim(), quantity: pQty || 1, unitPrice: pUnit || 0, costPrice: pCost || 0 });
+    setPName(""); setPQty("1"); setPUnit(""); setPCost("");
+  }
+
+  function submitCost(e) {
+    e.preventDefault();
+    if (!cName.trim()) return;
+    onAddCost({ dealId: deal.id, name: cName.trim(), amount: cAmount || 0 });
+    setCName(""); setCAmount("");
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 14 }}>
+        <SummaryFigure value={fmtMoney(revenue)} label="Przychód" color="#111111" />
+        <SummaryFigure value={fmtMoney(margin)} label="Marża" color={margin >= 0 ? "#1C8A4B" : "#E4241B"} />
+        <SummaryFigure value={`${marginPct}%`} label="Marża %" color="#111111" />
+      </div>
+
+      <div style={S.label}>Produkty</div>
+      <form onSubmit={submitProduct} style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6, marginBottom: 8 }}>
+        <input value={pName} onChange={(e) => setPName(e.target.value)} placeholder="Nazwa" style={{ ...S.input, flex: 2, minWidth: 100 }} />
+        <input value={pQty} onChange={(e) => setPQty(e.target.value)} type="number" placeholder="Ilość" style={{ ...S.input, flex: 1, minWidth: 60 }} />
+        <input value={pUnit} onChange={(e) => setPUnit(e.target.value)} type="number" placeholder="Cena" style={{ ...S.input, flex: 1, minWidth: 70 }} />
+        <input value={pCost} onChange={(e) => setPCost(e.target.value)} type="number" placeholder="Koszt wł." style={{ ...S.input, flex: 1, minWidth: 70 }} />
+        <button type="submit" style={S.secondaryBtn}><Plus size={13} /></button>
+      </form>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+        {products.length === 0 && <EmptyNote text="Brak produktów." />}
+        {products.map((p) => (
+          <div key={p.id} style={S.urgentRow}>
+            <div style={{ flex: 1, fontSize: 12.5 }}>
+              {p.name} · {p.quantity} × {fmtMoney(p.unitPrice)}
+            </div>
+            <button onClick={() => onDeleteProduct(p.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+          </div>
+        ))}
+      </div>
+
+      <div style={S.label}>Dodatkowe koszty</div>
+      <form onSubmit={submitCost} style={{ display: "flex", gap: 6, marginTop: 6, marginBottom: 8 }}>
+        <input value={cName} onChange={(e) => setCName(e.target.value)} placeholder="Nazwa kosztu" style={{ ...S.input, flex: 2 }} />
+        <input value={cAmount} onChange={(e) => setCAmount(e.target.value)} type="number" placeholder="Kwota" style={{ ...S.input, flex: 1 }} />
+        <button type="submit" style={S.secondaryBtn}><Plus size={13} /></button>
+      </form>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {costs.length === 0 && <EmptyNote text="Brak dodatkowych kosztów." />}
+        {costs.map((c) => (
+          <div key={c.id} style={S.urgentRow}>
+            <div style={{ flex: 1, fontSize: 12.5 }}>{c.name} · {fmtMoney(c.amount)}</div>
+            <button onClick={() => onDeleteCost(c.id)} className="iconBtn" style={S.iconBtnStyle}><X size={13} color="#9A9A9A" /></button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
 /* ---------- Sekwencyjny proces sprzedaży (odznaczanie krokami po kolei) ---------- */
-function SalesProcessCard({ client, onUpdateClient }) {
-  const pipeline = computePipeline(client);
+function SalesProcessCard({ deal, company, onUpdateDeal }) {
+  const pipeline = computePipeline(deal, company);
   const [expandedKey, setExpandedKey] = useState(() => {
     const firstOpen = pipeline.stages.find((s) => !s.done);
     return (firstOpen || pipeline.stages[pipeline.stages.length - 1]).key;
   });
 
   function toggleStep(stepKey) {
-    const idx = PIPELINE_FLAT_ORDER.findIndex((s) => s.key === stepKey);
-    const current = !!(client.pipelineSteps && client.pipelineSteps[stepKey]);
-    const nextSteps = { ...(client.pipelineSteps || {}) };
-    if (!current) {
-      nextSteps[stepKey] = true;
-    } else {
-      // Odznaczenie kroku cofa też wszystkie kolejne — kolejność musi być zachowana.
-      for (let i = idx; i < PIPELINE_FLAT_ORDER.length; i++) {
-        const s = PIPELINE_FLAT_ORDER[i];
-        if (!s.auto) delete nextSteps[s.key];
-      }
-    }
-    onUpdateClient({ pipelineSteps: nextSteps });
+    const nextSteps = toggleStepInSteps(deal.pipelineSteps, stepKey);
+    onUpdateDeal({ pipelineSteps: nextSteps });
   }
 
   return (
@@ -1585,50 +2157,176 @@ function DetailRow({ icon: Icon, label, value }) {
   );
 }
 
-/* ---------- Tasks board (global, scoped by DB row-level security) ---------- */
-function TasksBoard({ tasks, doneTasks, onToggleTask, onOpenClient }) {
+/* ---------- Zadania: pełna strona z panelem filtrów ---------- */
+function taskCategory(t) {
+  if (t.done) return "wykonane";
+  if (!t.dueDate) return "inbox";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(t.dueDate);
+  due.setHours(0, 0, 0, 0);
+  const days = Math.round((due - today) / 86400000);
+  if (days < 0) return "spoznione";
+  if (days === 0) return "dzis";
+  if (days === 1) return "jutro";
+  const weekStart = startOfWeekMonday(today);
+  const thisWeekEnd = addDays(weekStart, 6);
+  const nextWeekStart = addDays(weekStart, 7);
+  const nextWeekEnd = addDays(weekStart, 13);
+  if (due <= thisWeekEnd) return "tydzien";
+  if (due >= nextWeekStart && due <= nextWeekEnd) return "nastepny_tydzien";
+  return "kiedys";
+}
+
+const TASK_CATEGORIES = [
+  { key: "wszystkie", label: "Wszystkie" },
+  { key: "inbox", label: "Inbox" },
+  { key: "spoznione", label: "Spóźnione" },
+  { key: "dzis", label: "Dziś" },
+  { key: "jutro", label: "Jutro" },
+  { key: "tydzien", label: "Ten tydzień" },
+  { key: "nastepny_tydzien", label: "Następny tydzień" },
+  { key: "kiedys", label: "Kiedyś" },
+  { key: "wykonane", label: "Wykonane" },
+];
+
+function TasksBoard({ tasks, onToggleTask, onDeleteTask, onOpenDeal }) {
+  const [category, setCategory] = useState("wszystkie");
+
+  const withCategory = useMemo(() => tasks.map((t) => ({ ...t, _cat: taskCategory(t) })), [tasks]);
+
+  const counts = useMemo(() => {
+    const map = {};
+    TASK_CATEGORIES.forEach((c) => {
+      map[c.key] = c.key === "wszystkie"
+        ? withCategory.filter((t) => !t.done).length
+        : withCategory.filter((t) => t._cat === c.key).length;
+    });
+    return map;
+  }, [withCategory]);
+
+  const visible = useMemo(() => {
+    const filtered = category === "wszystkie" ? withCategory.filter((t) => !t.done) : withCategory.filter((t) => t._cat === category);
+    return filtered.sort((a, b) => new Date(a.dueDate || 0) - new Date(b.dueDate || 0));
+  }, [withCategory, category]);
+
+  return (
+    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
+      <aside style={{ width: 190, flexShrink: 0 }}>
+        <SidebarSection title="Zadania">
+          {TASK_CATEGORIES.map((c) => (
+            <SidebarItem key={c.key} label={c.label} count={counts[c.key]} active={category === c.key} onClick={() => setCategory(c.key)} />
+          ))}
+          <SidebarItem label="Usunięte" disabled />
+        </SidebarSection>
+      </aside>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={S.card}>
+          <h3 style={S.cardTitle}>{TASK_CATEGORIES.find((c) => c.key === category)?.label || "Zadania"}</h3>
+          {visible.length === 0 && <EmptyNote text="Brak zadań w tej kategorii." />}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+            {visible.map((t) => {
+              const Icon = TASK_TYPES[t.type]?.icon || Bell;
+              return (
+                <div key={t.id} className="hoverRow" style={{ ...S.urgentRow, opacity: t.done ? 0.5 : 1 }}>
+                  <button onClick={() => onToggleTask(t)} style={{ background: "none", border: "none", display: "flex" }}>
+                    {t.done ? <CheckCircle2 size={17} color="#1C8A4B" /> : <Circle size={17} color="#B7B5B1" />}
+                  </button>
+                  <Icon size={14} color="#6B6B6B" />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, textDecoration: t.done ? "line-through" : "none" }}>{t.title}</div>
+                    <button
+                      onClick={() => t.dealId && onOpenDeal(t.dealId)}
+                      disabled={!t.dealId}
+                      style={{ background: "none", border: "none", padding: 0, fontSize: 11.5, color: t.dealId ? "#E4241B" : "#9A9A9A", fontWeight: 600, textAlign: "left" }}
+                    >
+                      {t.dealName ? `Proces sprzedaży pojazdu — ${t.companyName} · ${t.dealName}` : t.companyName}
+                    </button>
+                    <div style={{ fontSize: 10.5, color: "#9A9A9A", marginTop: 2 }}>Dla: {t.ownerName}</div>
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: t.days !== null && t.days <= 0 && !t.done ? "#E4241B" : "#9A9A9A", whiteSpace: "nowrap" }}>
+                    {fmtDate(t.dueDate)}
+                  </span>
+                  <button onClick={() => onDeleteTask(t.id)} className="iconBtn" style={S.iconBtnStyle}><X size={14} color="#9A9A9A" /></button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Statystyki ---------- */
+function StatystykiView({ deals, companiesById, products }) {
+  const [subTab, setSubTab] = useState("etap");
+  const openDeals = deals.filter((d) => d.status === "otwarta");
+  const totalOpenValue = openDeals.reduce((s, d) => s + (Number(d.budget) || 0), 0);
+
+  const stageCounts = useMemo(() => {
+    return PIPELINE_STAGES.map((stage) => {
+      const count = openDeals.filter((d) => {
+        const pipeline = computePipeline(d, companiesById[d.companyId]);
+        return pipeline.currentStage.key === stage.key;
+      }).length;
+      return { key: stage.key, label: stage.label, count };
+    });
+  }, [openDeals, companiesById]);
+
+  const maxCount = Math.max(1, ...stageCounts.map((s) => s.count));
+
+  const SUB_TABS = [
+    { key: "etap", label: "Etap" },
+    { key: "produkt", label: "Produkt" },
+    { key: "opiekun", label: "Opiekun" },
+    { key: "zrodlo", label: "Źródło" },
+  ];
+
   return (
     <div style={S.stack}>
-      <section style={S.card}>
-        <h3 style={S.cardTitle}>Aktywne zadania</h3>
-        {tasks.length === 0 && <EmptyNote text="Brak aktywnych zadań." />}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
-          {tasks.map((t) => {
-            const Icon = TASK_TYPES[t.type]?.icon || Bell;
-            return (
-              <div key={t.id} className="hoverRow" style={S.urgentRow}>
-                <button onClick={() => onToggleTask(t)} style={{ background: "none", border: "none", display: "flex" }}>
-                  <Circle size={17} color="#B7B5B1" />
-                </button>
-                <Icon size={14} color="#6B6B6B" />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t.title}</div>
-                  <button onClick={() => onOpenClient(t.clientId)} style={{ background: "none", border: "none", padding: 0, fontSize: 11.5, color: "#E4241B", fontWeight: 600 }}>
-                    {t.clientName} <ChevronRight size={10} style={{ display: "inline" }} />
-                  </button>
-                </div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: t.days !== null && t.days <= 2 ? "#E4241B" : "#9A9A9A" }}>
-                  {t.days < 0 ? `${Math.abs(t.days)} dni po terminie` : t.days === 0 ? "Dziś" : `za ${t.days} dni`}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      <div style={S.statRow}>
+        <StatCard label="Otwarte szanse sprzedaży" value={openDeals.length} />
+        <StatCard label="Produkty w szansach" value={products.length} />
+        <StatCard label="Wartość otwartych szans" value={fmtMoney(totalOpenValue)} />
+      </div>
 
-      {doneTasks.length > 0 && (
+      <div style={{ display: "flex", gap: 6 }}>
+        {SUB_TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setSubTab(t.key)}
+            style={{
+              background: subTab === t.key ? "#111111" : "#F0EFEC", color: subTab === t.key ? "#fff" : "#111111",
+              border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 600,
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === "etap" ? (
         <section style={S.card}>
-          <h3 style={S.cardTitle}>Zakończone</h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
-            {doneTasks.map((t) => (
-              <div key={t.id} style={{ ...S.urgentRow, opacity: 0.5 }}>
-                <button onClick={() => onToggleTask(t)} style={{ background: "none", border: "none", display: "flex" }}>
-                  <CheckCircle2 size={17} color="#1C8A4B" />
-                </button>
-                <div style={{ flex: 1, fontSize: 13, textDecoration: "line-through" }}>{t.title}</div>
-                <span style={{ fontSize: 11, color: "#9A9A9A" }}>{t.clientName}</span>
+          <h3 style={S.cardTitle}>Otwarte szanse sprzedaży wg etapu procesu</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 18 }}>
+            {stageCounts.map((s) => (
+              <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 160, fontSize: 12.5, color: "#6B6B6B", fontWeight: 600 }}>{s.label}</div>
+                <div style={{ flex: 1, background: "#F0EFEC", borderRadius: 6, height: 22, overflow: "hidden" }}>
+                  <div style={{ width: `${(s.count / maxCount) * 100}%`, background: "#E4241B", height: "100%", borderRadius: 6 }} />
+                </div>
+                <div style={{ width: 28, fontSize: 13, fontWeight: 700, textAlign: "right" }}>{s.count}</div>
               </div>
             ))}
+          </div>
+        </section>
+      ) : (
+        <section style={{ ...S.card, textAlign: "center", padding: 40 }}>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 16, marginBottom: 6 }}>Wkrótce</div>
+          <div style={{ fontSize: 13, color: "#9A9A9A" }}>
+            Podział wg {SUB_TABS.find((t) => t.key === subTab)?.label.toLowerCase()} pojawi się w kolejnej aktualizacji.
           </div>
         </section>
       )}
@@ -1636,14 +2334,135 @@ function TasksBoard({ tasks, doneTasks, onToggleTask, onOpenClient }) {
   );
 }
 
-/* ---------- Client form modal (with NIP lookup) ---------- */
-function ClientFormModal({ initial, staff = [], canReassign = false, currentUserId, onClose, onSave }) {
+/* ---------- Kalendarz: widok miesiąca ---------- */
+const WEEKDAY_LABELS = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Niedz"];
+const MONTH_LABELS = [
+  "Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec",
+  "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień",
+];
+const CALENDAR_VIEW_MODES = [
+  { key: "rok", label: "Rok" },
+  { key: "miesiac", label: "Miesiąc" },
+  { key: "tydzien", label: "Tydzień" },
+  { key: "5dni", label: "5 dni" },
+  { key: "dzien", label: "Dzień" },
+];
+
+function CalendarView({ tasks, onOpenDeal }) {
+  const [anchor, setAnchor] = useState(() => new Date());
+  const [viewMode, setViewMode] = useState("miesiac");
+
+  const weeks = useMemo(() => monthMatrix(anchor), [anchor]);
+  const today = new Date();
+
+  function go(deltaMonths) {
+    setAnchor((a) => new Date(a.getFullYear(), a.getMonth() + deltaMonths, 1));
+  }
+
+  const tasksByDay = useMemo(() => {
+    const withDate = tasks.filter((t) => t.dueDate);
+    return (day) => withDate.filter((t) => isSameDay(t.dueDate, day));
+  }, [tasks]);
+
+  return (
+    <div style={S.stack}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => go(-1)} style={S.iconBtnStyle} className="iconBtn"><ChevronLeft size={18} /></button>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 18, fontWeight: 600, minWidth: 160, textAlign: "center" }}>
+            {MONTH_LABELS[anchor.getMonth()]} {anchor.getFullYear()}
+          </div>
+          <button onClick={() => go(1)} style={S.iconBtnStyle} className="iconBtn"><ChevronRight size={18} /></button>
+          <button onClick={() => setAnchor(new Date())} style={S.secondaryBtn}>Dziś</button>
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {CALENDAR_VIEW_MODES.map((m) => (
+            <button
+              key={m.key}
+              onClick={() => setViewMode(m.key)}
+              title={m.key !== "miesiac" ? "Ten widok pojawi się w kolejnej aktualizacji" : undefined}
+              style={{
+                background: viewMode === m.key ? "#111111" : "#F0EFEC", color: viewMode === m.key ? "#fff" : "#111111",
+                border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 600,
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {viewMode !== "miesiac" ? (
+        <section style={{ ...S.card, textAlign: "center", padding: 40 }}>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 16, marginBottom: 6 }}>Wkrótce</div>
+          <div style={{ fontSize: 13, color: "#9A9A9A" }}>
+            Widok „{CALENDAR_VIEW_MODES.find((m) => m.key === viewMode)?.label}” pojawi się w kolejnej aktualizacji — na razie dostępny jest widok Miesiąc.
+          </div>
+        </section>
+      ) : (
+        <div style={{ ...S.card, padding: 0, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: "1px solid #E7E5E2" }}>
+            {WEEKDAY_LABELS.map((d) => (
+              <div key={d} style={{ padding: "10px 8px", fontSize: 11, fontWeight: 700, color: "#9A9A9A", textAlign: "center", textTransform: "uppercase" }}>{d}</div>
+            ))}
+          </div>
+          {weeks.map((week, wi) => (
+            <div key={wi} style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: wi < weeks.length - 1 ? "1px solid #F0EFEC" : "none" }}>
+              {week.map((day, di) => {
+                const inMonth = day.getMonth() === anchor.getMonth();
+                const isToday = isSameDay(day, today);
+                const dayTasks = tasksByDay(day);
+                return (
+                  <div key={di} style={{
+                    minHeight: 96, padding: 6, borderRight: di < 6 ? "1px solid #F0EFEC" : "none",
+                    background: inMonth ? "#fff" : "#FAFAF9", opacity: inMonth ? 1 : 0.55,
+                  }}>
+                    <div style={{
+                      fontSize: 11.5, fontWeight: 700, marginBottom: 4, width: 20, height: 20, display: "flex",
+                      alignItems: "center", justifyContent: "center", borderRadius: "50%",
+                      background: isToday ? "#E4241B" : "transparent", color: isToday ? "#fff" : "#111111",
+                    }}>
+                      {day.getDate()}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      {dayTasks.slice(0, 3).map((t) => {
+                        const Icon = TASK_TYPES[t.type]?.icon || Bell;
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => t.dealId && onOpenDeal(t.dealId)}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 4, background: t.done ? "#F0EFEC" : "#FCEBEA",
+                              border: "none", borderRadius: 5, padding: "2px 5px", fontSize: 10, fontWeight: 600,
+                              textDecoration: t.done ? "line-through" : "none", textAlign: "left", width: "100%",
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            }}
+                            title={t.title}
+                          >
+                            <Icon size={9} style={{ flexShrink: 0 }} /> {t.title}
+                          </button>
+                        );
+                      })}
+                      {dayTasks.length > 3 && (
+                        <div style={{ fontSize: 9.5, color: "#9A9A9A", fontWeight: 700 }}>+{dayTasks.length - 3} więcej</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Company form modal (z wyszukiwaniem NIP) ---------- */
+function CompanyFormModal({ initial, staff = [], canReassign = false, currentUserId, onClose, onSave }) {
   const [form, setForm] = useState(() => initial || {
     id: null, name: "", phone: "", email: "", address: "", nip: "",
-    carInterest: "", budget: "", financing: FINANCING[0], decisionDate: "",
-    status: "nowy", notes: "",
-    contactPerson: "", source: "", tags: [], pinnedNote: "", ownerId: currentUserId,
-    visibility: "Publiczna", purchaseType: "", winReason: "", lossReason: "",
+    notes: "", contactPerson: "", source: "", tags: [], pinnedNote: "", ownerId: currentUserId,
   });
   const [saving, setSaving] = useState(false);
   const [nipLoading, setNipLoading] = useState(false);
@@ -1686,7 +2505,7 @@ function ClientFormModal({ initial, staff = [], canReassign = false, currentUser
       <div style={S.modal} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, fontWeight: 600 }}>
-            {initial ? "Edytuj klienta" : "Nowy klient"}
+            {initial ? "Edytuj firmę" : "Nowa firma"}
           </h2>
           <button onClick={onClose} style={{ background: "none", border: "none" }}><X size={18} /></button>
         </div>
@@ -1713,62 +2532,12 @@ function ClientFormModal({ initial, staff = [], canReassign = false, currentUser
               {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <Field label="Model / auto" value={form.carInterest} onChange={(v) => set("carInterest", v)} />
-          <Field label="Budżet (PLN)" value={form.budget} onChange={(v) => set("budget", v)} type="number" />
-          <div>
-            <label style={S.label}>Finansowanie</label>
-            <select value={form.financing} onChange={(e) => set("financing", e.target.value)} style={S.input}>
-              {FINANCING.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </div>
-          <Field label="Decyzja do (data)" value={form.decisionDate} onChange={(v) => set("decisionDate", v)} type="date" />
-          <div>
-            <label style={S.label}>Status</label>
-            <select value={form.status} onChange={(e) => set("status", e.target.value)} style={S.input}>
-              {STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={S.label}>Rodzaj zakupu</label>
-            <select value={form.purchaseType} onChange={(e) => set("purchaseType", e.target.value)} style={S.input}>
-              <option value="">— wybierz —</option>
-              {PURCHASE_TYPES.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={S.label}>Widoczność</label>
-            <select value={form.visibility} onChange={(e) => set("visibility", e.target.value)} style={S.input}>
-              {VISIBILITY_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </div>
           {canReassign && staff.length > 0 && (
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={S.label}>Opiekun</label>
               <select value={form.ownerId || ""} onChange={(e) => set("ownerId", e.target.value)} style={S.input}>
                 {staff.map((p) => <option key={p.id} value={p.id}>{p.full_name || p.email || p.id}</option>)}
               </select>
-            </div>
-          )}
-          {form.status === "sprzedane" && (
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label style={S.label}>Powód wygrania</label>
-              <input
-                value={form.winReason || ""}
-                onChange={(e) => set("winReason", e.target.value)}
-                style={S.input}
-                placeholder="np. Najlepsza cena, szybki termin dostawy"
-              />
-            </div>
-          )}
-          {form.status === "utracony" && (
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label style={S.label}>Powód przegrania</label>
-              <input
-                value={form.lossReason || ""}
-                onChange={(e) => set("lossReason", e.target.value)}
-                style={S.input}
-                placeholder="np. Klient wybrał konkurencję, zbyt wysoka cena"
-              />
             </div>
           )}
           <div style={{ gridColumn: "1 / -1" }}>
@@ -1791,7 +2560,83 @@ function ClientFormModal({ initial, staff = [], canReassign = false, currentUser
           </div>
           <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
             <button type="button" onClick={onClose} style={S.secondaryBtn}>Anuluj</button>
-            <button type="submit" disabled={saving} style={S.primaryBtn}>{saving ? "Zapisywanie…" : "Zapisz klienta"}</button>
+            <button type="submit" disabled={saving} style={S.primaryBtn}>{saving ? "Zapisywanie…" : "Zapisz firmę"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Deal form modal (szansa sprzedaży) ---------- */
+function DealFormModal({ initial, companyId, currentUserId, onClose, onSave }) {
+  const [form, setForm] = useState(() => initial || {
+    id: null, companyId, name: "", carInterest: "", budget: "", financing: FINANCING[0],
+    decisionDate: "", status: "otwarta", purchaseType: "", visibility: "Publiczna", notes: "",
+    ownerId: currentUserId,
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set(field, value) {
+    setForm((f) => ({ ...f, [field]: value }));
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setSaving(true);
+    await onSave({ ...form, companyId: form.companyId || companyId });
+    setSaving(false);
+  }
+
+  return (
+    <div style={S.modalOverlay} onClick={onClose}>
+      <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, fontWeight: 600 }}>
+            {initial ? "Edytuj szansę sprzedaży" : "Nowa szansa sprzedaży"}
+          </h2>
+          <button onClick={onClose} style={{ background: "none", border: "none" }}><X size={18} /></button>
+        </div>
+        <form onSubmit={submit} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Field label="Nazwa szansy sprzedaży *" value={form.name} onChange={(v) => set("name", v)} required />
+          </div>
+          <Field label="Model / auto" value={form.carInterest} onChange={(v) => set("carInterest", v)} />
+          <Field label="Budżet (PLN)" value={form.budget} onChange={(v) => set("budget", v)} type="number" />
+          <div>
+            <label style={S.label}>Finansowanie</label>
+            <select value={form.financing} onChange={(e) => set("financing", e.target.value)} style={S.input}>
+              {FINANCING.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </div>
+          <Field label="Decyzja do (data)" value={form.decisionDate} onChange={(v) => set("decisionDate", v)} type="date" />
+          <div>
+            <label style={S.label}>Status</label>
+            <select value={form.status} onChange={(e) => set("status", e.target.value)} style={S.input}>
+              {DEAL_STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Rodzaj zakupu</label>
+            <select value={form.purchaseType} onChange={(e) => set("purchaseType", e.target.value)} style={S.input}>
+              <option value="">— wybierz —</option>
+              {PURCHASE_TYPES.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Widoczność</label>
+            <select value={form.visibility} onChange={(e) => set("visibility", e.target.value)} style={S.input}>
+              {VISIBILITY_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={S.label}>Notatki</label>
+            <textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={3} style={{ ...S.input, resize: "vertical" }} />
+          </div>
+          <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+            <button type="button" onClick={onClose} style={S.secondaryBtn}>Anuluj</button>
+            <button type="submit" disabled={saving} style={S.primaryBtn}>{saving ? "Zapisywanie…" : "Zapisz szansę sprzedaży"}</button>
           </div>
         </form>
       </div>
@@ -1886,8 +2731,6 @@ function Field({ label, value, onChange, type = "text", required }) {
   );
 }
 
-/* ---------- Styles ---------- */
-
 /* ---------- Vehicles (Pojazdy) ---------- */
 function VehicleStatusPill({ statusKey }) {
   const s = VEHICLE_STATUSES.find((x) => x.key === statusKey) || VEHICLE_STATUSES[0];
@@ -1938,8 +2781,8 @@ function VehiclesList({ vehicles, statusFilter, setStatusFilter, onAdd, onEdit, 
                 <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{v.bodyType || "—"}</div>
               </span>
               <span style={{ flex: 1, fontSize: 13, textAlign: "left" }}>{v.year || "—"}</span>
-              <span style={{ flex: 1.2, fontSize: 13, textAlign: "left" }}>{v.price ? `${Number(v.price).toLocaleString("pl-PL")} zł` : "—"}</span>
-              <span style={{ flex: 1.2, fontSize: 13, textAlign: "left" }}>{v.monthlyPayment ? `${Number(v.monthlyPayment).toLocaleString("pl-PL")} zł/mc` : "—"}</span>
+              <span style={{ flex: 1.2, fontSize: 13, textAlign: "left" }}>{v.price ? fmtMoney(v.price) : "—"}</span>
+              <span style={{ flex: 1.2, fontSize: 13, textAlign: "left" }}>{v.monthlyPayment ? `${fmtMoney(v.monthlyPayment)}/mc` : "—"}</span>
               <span style={{ flex: 1.2, textAlign: "left" }}><VehicleStatusPill statusKey={v.status} /></span>
               <span style={{ flex: 0.6, display: "flex", gap: 6, justifyContent: "flex-end" }}>
                 <button className="iconBtn" onClick={() => onEdit(v)} style={S.iconBtnStyle}><Edit2 size={14} /></button>
@@ -2100,9 +2943,6 @@ function VehicleFormModal({ initial, onClose, onSave }) {
 function SettingsPanel({ user, goals, onUpdateGoals }) {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteName, setInviteName] = useState("");
-  const [inviteRole, setInviteRole] = useState("doradca");
   const [msg, setMsg] = useState(null);
   const [goalsForm, setGoalsForm] = useState(goals);
   const [savingGoals, setSavingGoals] = useState(false);
@@ -2143,7 +2983,7 @@ function SettingsPanel({ user, goals, onUpdateGoals }) {
         </div>
         <form onSubmit={saveGoals} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, alignItems: "end" }}>
           <div>
-            <label style={S.label}>Nowi klienci (cel)</label>
+            <label style={S.label}>Nowe firmy / kontakty (cel)</label>
             <input type="number" value={goalsForm.contactsTarget} onChange={(e) => setGoalsForm((f) => ({ ...f, contactsTarget: e.target.value }))} style={S.input} />
           </div>
           <div>
@@ -2215,11 +3055,11 @@ function SettingsPanel({ user, goals, onUpdateGoals }) {
 const S = {
   appShell: {
     fontFamily: "'Inter', sans-serif", background: "#F3F3F1", minHeight: 600, color: "#111111",
-    borderRadius: 12, overflow: "hidden", border: "1px solid #E7E5E2", maxWidth: 1200, margin: "0 auto",
+    borderRadius: 12, overflow: "hidden", border: "1px solid #E7E5E2", maxWidth: 1280, margin: "0 auto",
   },
   header: {
     display: "flex", justifyContent: "space-between", alignItems: "center",
-    padding: "14px 24px", background: "#FFFFFF",
+    padding: "14px 24px", background: "#FFFFFF", flexWrap: "wrap", gap: 10,
   },
   headerWedge: { height: 4, background: "linear-gradient(90deg, #111111 50%, #E4241B 50%)" },
   errorBanner: { background: "#E4241B", color: "#fff", padding: "8px 24px", fontSize: 13, display: "flex", alignItems: "center" },
@@ -2242,7 +3082,7 @@ const S = {
     display: "flex", alignItems: "center", gap: 6, background: "#E4241B", color: "#fff", border: "none",
     borderRadius: 8, padding: "10px 16px", fontSize: 13, fontWeight: 700, justifyContent: "center",
   },
-  secondaryBtn: { background: "#F0EFEC", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, fontWeight: 600, color: "#111111" },
+  secondaryBtn: { display: "flex", alignItems: "center", gap: 6, background: "#F0EFEC", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, fontWeight: 600, color: "#111111" },
   dangerBtn: { background: "#FCEBEA", border: "none", borderRadius: 8, padding: "9px 11px", color: "#E4241B" },
   backBtn: { background: "none", border: "none", fontSize: 13, fontWeight: 600, color: "#6B6B6B", textAlign: "left", padding: 0 },
   tableHeader: {
@@ -2251,7 +3091,7 @@ const S = {
   },
   tableRow: {
     display: "flex", alignItems: "center", width: "100%", background: "none", border: "none",
-    padding: "13px 14px", borderBottom: "1px solid #F0EFEC", textAlign: "left",
+    padding: "13px 14px", borderBottom: "1px solid #F0EFEC", textAlign: "left", gap: 10,
   },
   urgentRow: {
     display: "flex", alignItems: "center", gap: 10, background: "#FAFAF9", border: "1px solid #F0EFEC",
