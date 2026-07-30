@@ -362,7 +362,7 @@
 }
 @media(max-width:900px){
   nav{gap:8px;}
-  .logo{flex-shrink:1;min-width:0;overflow:hidden;}
+  .logo{flex-shrink:0;overflow:hidden;}
   .nav-cta{
     gap:8px;
     flex-wrap:nowrap;
@@ -399,7 +399,8 @@
  @media(max-width:600px){
   .wrap{padding:0 20px;}
   nav{padding:10px 10px;gap:6px;}
-  .logo img{height:26px !important;max-width:110px;width:auto;}
+  .logo{flex-shrink:0;}
+  .logo img{height:22px !important;max-width:90px;width:auto;}
   .nav-cta{
     flex-direction:row;
     gap:3px;
