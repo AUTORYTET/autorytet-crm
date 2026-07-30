@@ -351,22 +351,29 @@
   }
   /* MOBILE NAV DROPDOWN (hidden behind hamburger button) */
 @media(max-width:900px){
-  nav{position:relative;}
-  .nav-links.mobile-open{
-    display:flex;
-    flex-direction:column;
-    position:absolute;
-    top:100%;left:0;right:0;
-    background:var(--white);
-    padding:16px 32px;
-    gap:4px;
-    margin:0;
-    box-shadow:0 8px 16px rgba(0,0,0,0.08);
-    border-bottom:1px solid rgba(0,0,0,0.08);
+  .nav-cta{
+    gap:8px;
+    flex-wrap:nowrap;
   }
-  .nav-links.mobile-open a{
-    padding:12px 0;
-    text-align:left;
+  .btn-outline{
+    padding:7px 6px;
+    font-size:10px;
+    flex:1 1 0;
+    text-align:center;
+    white-space:nowrap;
+  }
+  .btn-red{
+    padding:10px 6px;
+    font-size:11px;
+    flex:1 1 0;
+    text-align:center;
+    white-space:nowrap;
+  }
+  .menu-toggle{
+    font-size:22px;
+    flex:1 1 0;
+    padding:8px 6px;
+    text-align:center;
   }
 }
   @media(max-width:900px){
