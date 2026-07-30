@@ -340,51 +340,81 @@
     .nav-links{display:none;}
     .menu-toggle{display:block;}
   }
+  /* MOBILE NAV DROPDOWN (hidden behind hamburger button) */
+  @media(max-width:900px){
+    nav{position:relative;}
+    .nav-links.mobile-open{
+      display:flex;
+      flex-direction:column;
+      position:absolute;
+      top:100%;left:0;right:0;
+      background:var(--white);
+      padding:16px 32px;
+      gap:4px;
+      margin:0;
+      box-shadow:0 8px 16px rgba(0,0,0,0.08);
+      border-bottom:1px solid rgba(0,0,0,0.08);
+    }
+    .nav-links.mobile-open a{
+      padding:12px 0;
+      text-align:left;
+    }
+  }
   @media(max-width:900px){
     .nav-cta{
       gap:8px;
-      flex-wrap:wrap;
+      flex-wrap:nowrap;
     }
     .btn-outline{
-      padding:7px 10px;
+      padding:7px 6px;
       font-size:10px;
-      flex:0 1 auto;
+      flex:1 1 0;
+      text-align:center;
+      white-space:nowrap;
     }
     .btn-red{
-      padding:10px 14px;
-      font-size:12px;
-      flex:1 1 calc(50% - 4px);
+      padding:10px 6px;
+      font-size:11px;
+      flex:1 1 0;
+      text-align:center;
+      white-space:nowrap;
     }
     .menu-toggle{
-      font-size:24px;
-      flex:1 1 calc(50% - 4px);
-      padding:10px;
+      font-size:22px;
+      flex:1 1 0;
+      padding:8px 6px;
+      text-align:center;
     }
   }
   @media(max-width:600px){
     .wrap{padding:0 20px;}
-    nav{padding:10px 12px;gap:6px;}
+    nav{padding:10px 12px;gap:4px;}
     .nav-cta{
       flex-direction:row;
-      gap:6px;
+      gap:4px;
       width:100%;
-      flex-wrap:wrap;
+      flex-wrap:nowrap;
     }
     .btn-outline{
-      padding:7px 10px;
-      font-size:10px;
-      flex:0 1 auto;
+      padding:7px 3px;
+      font-size:9px;
+      flex:1 1 0;
+      text-align:center;
+      white-space:nowrap;
     }
     .btn-red{
-      padding:10px 14px;
-      font-size:12px;
-      flex:1 1 calc(50% - 3px);
+      padding:10px 3px;
+      font-size:10px;
+      flex:1 1 0;
+      text-align:center;
+      white-space:nowrap;
     }
     .menu-toggle{
       display:block;
-      font-size:22px;
-      flex:1 1 calc(50% - 3px);
-      padding:8px;
+      font-size:20px;
+      flex:1 1 0;
+      padding:8px 2px;
+      text-align:center;
     }
     .search-panel{flex-direction:column;align-items:stretch;transform:translateY(24px);}
     .search-submit{width:100%;}
@@ -578,6 +608,18 @@
     <button class="menu-toggle">&#9776;</button>
   </nav>
 </header>
+<!-- Mobile nav toggle (shows/hides nav-links behind the hamburger button) -->
+<script>
+  (function(){
+    var toggle = document.querySelector('.menu-toggle');
+    var links = document.querySelector('.nav-links');
+    if(toggle && links){
+      toggle.addEventListener('click', function(){
+        links.classList.toggle('mobile-open');
+      });
+    }
+  })();
+</script>
 <!-- Hidden admin/CRM access -->
 <div id="adminDot" title="" aria-hidden="true"></div>
 <!-- Client login modal -->
