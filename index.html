@@ -524,7 +524,18 @@
     <button class="menu-toggle">&#9776;</button>
   </nav>
 </header>
-
+<!-- Mobile nav toggle (shows/hides nav-links behind the hamburger button) -->
+<script>
+  (function(){
+    var toggle = document.querySelector('.menu-toggle');
+    var links = document.querySelector('.nav-links');
+    if(toggle && links){
+      toggle.addEventListener('click', function(){
+        links.classList.toggle('mobile-open');
+      });
+    }
+  })();
+</script>
 <!-- Hidden admin/CRM access -->
 <div id="adminDot" title="" aria-hidden="true"></div>
 
