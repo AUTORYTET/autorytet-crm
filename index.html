@@ -349,6 +349,26 @@
     .nav-links{display:none;}
     .menu-toggle{display:block;}
   }
+  /* MOBILE NAV DROPDOWN (hidden behind hamburger button) */
+@media(max-width:900px){
+  nav{position:relative;}
+  .nav-links.mobile-open{
+    display:flex;
+    flex-direction:column;
+    position:absolute;
+    top:100%;left:0;right:0;
+    background:var(--white);
+    padding:16px 32px;
+    gap:4px;
+    margin:0;
+    box-shadow:0 8px 16px rgba(0,0,0,0.08);
+    border-bottom:1px solid rgba(0,0,0,0.08);
+  }
+  .nav-links.mobile-open a{
+    padding:12px 0;
+    text-align:left;
+  }
+}
   @media(max-width:900px){
     .nav-cta{
       gap:8px;
