@@ -2,7 +2,7 @@
   "rewrites": [
     { "source": "/crm", "destination": "/crm.html" },
     { "source": "/konto", "destination": "/crm.html" },
-    { "source": "/porownywarka-ofert", "destination": "/porownywarka-ofert.html" }
+    { "source": "/porownywarka-ofert", "destination": "/porownywarka-ofert.html" },
     { "source": "/o-nas", "destination": "/o-nas.html" }
   ]
 }
