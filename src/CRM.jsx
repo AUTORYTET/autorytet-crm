@@ -3,7 +3,7 @@ import {
   Phone, Mail, MapPin, Building2, Car, Wallet, CalendarClock, Plus,
   Search, CheckCircle2, Circle, X, LayoutGrid, Users, ListChecks,
   Handshake, Bell, Trash2, ChevronRight, ChevronLeft, LogOut, Loader2, Settings, UserPlus, Edit2,
-  Tag, Pin, Send, Calendar, BarChart3, Package, Link2, Sparkles, Filter, MoreVertical, Download
+  Tag, Pin, Send, Calendar, BarChart3, Package, Link2, Sparkles, Filter, MoreVertical, Download, Menu
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import logo from "./assets/logo.png";
@@ -23,6 +23,69 @@ function useFonts() {
     link.href =
       "https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap";
     document.head.appendChild(link);
+  }, []);
+}
+
+/* ---------- Dostosowanie do telefonu (Android / iOS): viewport + PWA meta ----------
+   Wstrzykuje tagi potrzebne, żeby CRM dało się wygodnie używać w przeglądarce na
+   telefonie i "zainstalować" jako ikonę na ekranie głównym (PWA). Nic nie nadpisuje —
+   każdy tag dodawany jest tylko raz (po id) i tylko jeśli host'ująca strona (index.html)
+   nie ma go już wcześniej ustawionego. */
+const MOBILE_META_ID = "autorytet-mobile-meta";
+function useMobileMeta() {
+  useEffect(() => {
+    if (document.getElementById(MOBILE_META_ID)) return;
+    const marker = document.createElement("meta");
+    marker.id = MOBILE_META_ID;
+    marker.name = "autorytet-crm-mobile-ready";
+    marker.content = "1";
+    document.head.appendChild(marker);
+
+    if (!document.querySelector('meta[name="viewport"]')) {
+      const viewport = document.createElement("meta");
+      viewport.name = "viewport";
+      viewport.content = "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover";
+      document.head.appendChild(viewport);
+    }
+    const addMeta = (name, content) => {
+      if (document.querySelector(`meta[name="${name}"]`)) return;
+      const m = document.createElement("meta");
+      m.name = name;
+      m.content = content;
+      document.head.appendChild(m);
+    };
+    addMeta("mobile-web-app-capable", "yes");
+    addMeta("apple-mobile-web-app-capable", "yes");
+    addMeta("apple-mobile-web-app-status-bar-style", "black-translucent");
+    addMeta("apple-mobile-web-app-title", "Autorytet CRM");
+    addMeta("theme-color", "#111111");
+
+    if (!document.querySelector('link[rel="apple-touch-icon"]')) {
+      const touchIcon = document.createElement("link");
+      touchIcon.rel = "apple-touch-icon";
+      touchIcon.href = logo;
+      document.head.appendChild(touchIcon);
+    }
+
+    if (!document.querySelector('link[rel="manifest"]')) {
+      const manifest = {
+        name: "Autorytet CRM",
+        short_name: "Autorytet CRM",
+        start_url: ".",
+        display: "standalone",
+        background_color: "#F3F3F1",
+        theme_color: "#111111",
+        icons: [
+          { src: logo, sizes: "192x192", type: "image/png" },
+          { src: logo, sizes: "512x512", type: "image/png" },
+        ],
+      };
+      const blob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
+      const link = document.createElement("link");
+      link.rel = "manifest";
+      link.href = URL.createObjectURL(blob);
+      document.head.appendChild(link);
+    }
   }, []);
 }
 
@@ -653,6 +716,8 @@ export default function CRM({ user, profile, onLogout }) {
   const [regionalSettings, setRegionalSettings] = useState(DEFAULT_REGIONAL);
   const [notificationSettings, setNotificationSettings] = useState(DEFAULT_NOTIFICATIONS);
   const [formatTick, setFormatTick] = useState(0);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  useMobileMeta();
   const [orgSettings, setOrgSettings] = useState(DEFAULT_ORG_CONFIG);
   const [contactPositions, setContactPositions] = useState([]);
   const [reasonCatalog, setReasonCatalog] = useState([]);
@@ -1362,8 +1427,8 @@ export default function CRM({ user, profile, onLogout }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F3F3F1", padding: 20 }}>
-      <div style={S.appShell}>
+    <div className="crm-outer" style={{ minHeight: "100vh", background: "#F3F3F1", padding: 20 }}>
+      <div className="crm-app-shell" style={S.appShell}>
         <style>{`
           * { box-sizing: border-box; }
           button { font-family: 'Inter', sans-serif; cursor: pointer; }
@@ -1375,11 +1440,49 @@ export default function CRM({ user, profile, onLogout }) {
           .sideItem:hover { background: #F0EFEC; }
           .spin { animation: spin 1s linear infinite; }
           @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          .crm-hamburger { display: none; }
+
+          /* ---------- Dostosowanie do telefonu (Android / iOS) ---------- */
+          @media (max-width: 860px) {
+            .crm-outer { padding: 0 !important; }
+            .crm-app-shell { max-width: 100% !important; border-radius: 0 !important; border-left: none !important; border-right: none !important; min-height: 100vh !important; }
+            .crm-header { padding: 10px 14px !important; }
+            .crm-hamburger { display: flex !important; }
+            .crm-nav { display: none !important; width: 100%; order: 3; flex-direction: column !important; gap: 2px !important; background: #FFFFFF; padding-top: 6px; }
+            .crm-nav.crm-nav-open { display: flex !important; }
+            .crm-nav .navBtn { width: 100%; justify-content: flex-start !important; }
+            .crm-main { padding: 14px !important; }
+            .crm-two-col { flex-direction: column !important; }
+            .crm-two-col > * { min-width: 0 !important; width: 100%; }
+            .crm-detail-grid { grid-template-columns: 1fr !important; }
+            .crm-form-grid { grid-template-columns: 1fr !important; }
+            .crm-sidebar-layout { flex-direction: column !important; }
+            .crm-sidebar { width: 100% !important; }
+            .crm-modal-overlay { padding: 0 !important; align-items: flex-end !important; }
+            .crm-modal { max-width: 100% !important; width: 100% !important; border-radius: 16px 16px 0 0 !important; max-height: 92vh !important; }
+            table, .crm-scroll-x { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+            /* iOS Safari powiększa widok po dotknięciu pola z font-size < 16px — wymuszamy 16px */
+            input, select, textarea { font-size: 16px !important; }
+          }
         `}</style>
 
-        <header style={S.header}>
-          <Logo />
-          <nav style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        <header className="crm-header" style={S.header}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              className="crm-hamburger"
+              onClick={() => setMobileNavOpen((v) => !v)}
+              aria-label="Menu"
+              style={{ background: "#F0EFEC", border: "none", borderRadius: 8, padding: 8, alignItems: "center" }}
+            >
+              {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
+            <Logo />
+          </div>
+          <nav
+            className={`crm-nav${mobileNavOpen ? " crm-nav-open" : ""}`}
+            style={{ display: "flex", gap: 4, flexWrap: "wrap" }}
+            onClick={() => setMobileNavOpen(false)}
+          >
             <NavBtn active={tab === "dashboard"} onClick={() => setTab("dashboard")} icon={LayoutGrid} label="Pulpit" />
             <NavBtn active={tab === "companies"} onClick={() => { setTab("companies"); setSelectedCompanyId(null); setSelectedDealId(null); }} icon={Users} label="Kontakty" />
             <NavBtn active={tab === "calendar"} onClick={() => setTab("calendar")} icon={Calendar} label="Kalendarz" />
@@ -1412,7 +1515,7 @@ export default function CRM({ user, profile, onLogout }) {
           </div>
         )}
 
-        <main style={S.main} key={formatTick}>
+        <main className="crm-main" style={S.main} key={formatTick}>
           {tab === "dashboard" && (
             <Dashboard
               companies={companies}
@@ -1790,7 +1893,7 @@ function Dashboard({ companies, deals, tasks, goals, onOpenCompany, onOpenDeal }
         <StatCard label="Wartość otwartych szans" value={fmtMoney(totalOpenBudget)} />
       </div>
 
-      <div style={S.twoCol}>
+      <div className="crm-two-col" style={S.twoCol}>
         <section style={{ ...S.card, flex: 1.2 }}>
           <h3 style={S.cardTitle}>Lejek sprzedaży</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
@@ -1950,8 +2053,8 @@ function CompaniesList({
   let lastLetter = null;
 
   return (
-    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
-      <aside style={{ width: 190, flexShrink: 0 }}>
+    <div className="crm-sidebar-layout" style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
+      <aside className="crm-sidebar" style={{ width: 190, flexShrink: 0 }}>
         <SidebarSection title="Pokaż">
           <SidebarItem label="Moje" count={mineCount} active={showFilter === "mine"} onClick={() => setShowFilter("mine")} />
           <SidebarItem label="Wszystkie" count={allCompanies.length} active={showFilter === "all"} onClick={() => setShowFilter("all")} />
@@ -2065,7 +2168,7 @@ function CompanyDetail({
     <div style={S.stack}>
       <button onClick={onBack} style={S.backBtn}>← Wszystkie firmy</button>
 
-      <div style={S.twoCol}>
+      <div className="crm-two-col" style={S.twoCol}>
         <section style={{ ...S.card, flex: 1.3 }}>
           <PinnedNoteBox note={company.pinnedNote} onSave={(v) => onUpdateCompany({ pinnedNote: v })} />
 
@@ -2087,7 +2190,7 @@ function CompanyDetail({
             <TagsEditor tags={company.tags || []} onChange={(tags) => onUpdateCompany({ tags })} />
           </div>
 
-          <div style={S.detailGrid}>
+          <div className="crm-detail-grid" style={S.detailGrid}>
             <DetailRow icon={Phone} label="Telefon" value={company.phone} />
             <DetailRow icon={Mail} label="E-mail" value={company.email} />
             <DetailRow icon={MapPin} label="Adres" value={company.address} />
@@ -2131,7 +2234,7 @@ function CompanyDetail({
         </section>
       </div>
 
-      <div style={S.twoCol}>
+      <div className="crm-two-col" style={S.twoCol}>
         <section style={{ ...S.card, flex: 1.3 }}>
           <h3 style={S.cardTitle}>Historia kontaktu</h3>
           <form onSubmit={submitActivity} style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
@@ -2273,8 +2376,8 @@ function DealsList({
   let lastLetter = null;
 
   return (
-    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
-      <aside style={{ width: 190, flexShrink: 0 }}>
+    <div className="crm-sidebar-layout" style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
+      <aside className="crm-sidebar" style={{ width: 190, flexShrink: 0 }}>
         <SidebarSection title="Pokaż">
           <SidebarItem label="Moje" active={showFilter === "mine"} onClick={() => setShowFilter("mine")} />
           <SidebarItem label="Wszystkie" active={showFilter === "all"} onClick={() => setShowFilter("all")} />
@@ -2434,7 +2537,7 @@ function DealDetail({
     <div style={S.stack}>
       <button onClick={onBack} style={S.backBtn}>← Wszystkie szanse sprzedaży</button>
 
-      <div style={S.twoCol}>
+      <div className="crm-two-col" style={S.twoCol}>
         <section style={{ ...S.card, flex: 1.3 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
@@ -2507,7 +2610,7 @@ function DealDetail({
             </div>
           )}
 
-          <div style={S.detailGrid}>
+          <div className="crm-detail-grid" style={S.detailGrid}>
             <DetailRow icon={Car} label="Model / auto" value={deal.carInterest} />
             <DetailRow icon={Wallet} label="Budżet" value={deal.budget ? fmtMoney(deal.budget) : "—"} />
             <DetailRow icon={Handshake} label="Finansowanie" value={deal.financing} />
@@ -2560,7 +2663,7 @@ function DealDetail({
         </section>
       </div>
 
-      <div style={S.twoCol}>
+      <div className="crm-two-col" style={S.twoCol}>
         {(!orgSettings || orgSettings.enableProducts !== false || orgSettings.enableCosts !== false) && (
           <section style={{ ...S.card, flex: 1 }}>
             <h3 style={{ ...S.cardTitle, display: "flex", alignItems: "center", gap: 8 }}><Package size={15} /> Produkty i koszty</h3>
@@ -2908,8 +3011,8 @@ function TasksBoard({ tasks, onToggleTask, onDeleteTask, onOpenDeal }) {
   }, [withCategory, category]);
 
   return (
-    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
-      <aside style={{ width: 190, flexShrink: 0 }}>
+    <div className="crm-sidebar-layout" style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
+      <aside className="crm-sidebar" style={{ width: 190, flexShrink: 0 }}>
         <SidebarSection title="Zadania">
           {TASK_CATEGORIES.map((c) => (
             <SidebarItem key={c.key} label={c.label} count={counts[c.key]} active={category === c.key} onClick={() => setCategory(c.key)} />
@@ -3201,15 +3304,15 @@ function CompanyFormModal({
   }
 
   return (
-    <div style={S.modalOverlay} onClick={onClose}>
-      <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+    <div className="crm-modal-overlay" style={S.modalOverlay} onClick={onClose}>
+      <div className="crm-modal" style={S.modal} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, fontWeight: 600 }}>
             {initial ? "Edytuj firmę" : "Nowa firma"}
           </h2>
           <button onClick={onClose} style={{ background: "none", border: "none" }}><X size={18} /></button>
         </div>
-        <form onSubmit={submit} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <form onSubmit={submit} className="crm-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <Field label="Imię i nazwisko / Firma *" value={form.name} onChange={(v) => set("name", v)} required />
           <Field label="Telefon *" value={form.phone} onChange={(v) => set("phone", v)} required />
           <Field label="E-mail" value={form.email} onChange={(v) => set("email", v)} type="email" />
@@ -3366,15 +3469,15 @@ function DealFormModal({ initial, companyId, currentUserId, defaultVisibility = 
   }
 
   return (
-    <div style={S.modalOverlay} onClick={onClose}>
-      <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+    <div className="crm-modal-overlay" style={S.modalOverlay} onClick={onClose}>
+      <div className="crm-modal" style={S.modal} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, fontWeight: 600 }}>
             {initial ? "Edytuj szansę sprzedaży" : "Nowa szansa sprzedaży"}
           </h2>
           <button onClick={onClose} style={{ background: "none", border: "none" }}><X size={18} /></button>
         </div>
-        <form onSubmit={submit} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <form onSubmit={submit} className="crm-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <Field label="Nazwa szansy sprzedaży *" value={form.name} onChange={(v) => set("name", v)} required />
           </div>
@@ -3628,8 +3731,8 @@ function VehicleFormModal({ initial, onClose, onSave }) {
   };
 
   return (
-    <div style={S.modalOverlay} onClick={onClose}>
-      <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+    <div className="crm-modal-overlay" style={S.modalOverlay} onClick={onClose}>
+      <div className="crm-modal" style={S.modal} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 18, fontWeight: 600 }}>
             {initial ? "Edytuj pojazd" : "Nowy pojazd"}
@@ -3767,8 +3870,8 @@ function SettingsPanel({
   const isAdmin = profile.role === "admin";
 
   return (
-    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
-      <aside style={{ width: 190, flexShrink: 0 }}>
+    <div className="crm-sidebar-layout" style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
+      <aside className="crm-sidebar" style={{ width: 190, flexShrink: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {SETTINGS_SECTIONS.map((s) => (
             <SidebarItem key={s.key} label={s.label} active={section === s.key} onClick={() => setSection(s.key)} />
@@ -4465,8 +4568,8 @@ function TemplateFormModal({ initial, onClose, onSave }) {
   }
 
   return (
-    <div style={S.modalOverlay} onClick={onClose}>
-      <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+    <div className="crm-modal-overlay" style={S.modalOverlay} onClick={onClose}>
+      <div className="crm-modal" style={S.modal} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, fontWeight: 600 }}>
             {initial ? "Edytuj szablon" : "Nowy szablon zadań"}
