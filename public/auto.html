@@ -567,6 +567,7 @@
   /* OPIS - sformatowana treść (nagłówki + listy z ogłoszenia) */
   .car-desc-heading{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--red);margin:24px 0 8px;}
   .car-desc-heading:first-child{margin-top:0;}
+  .car-desc-subheading{font-size:14px;font-weight:600;color:var(--black);margin:16px 0 6px;}
   .car-desc-list{margin:0 0 14px;padding-left:20px;}
   .car-desc-list li{margin-bottom:4px;}
   .car-desc-more{display:inline-block;margin-top:4px;font-size:13px;font-weight:600;color:var(--red);cursor:pointer;text-transform:uppercase;letter-spacing:0.04em;}
@@ -778,10 +779,24 @@
       d.textContent = (s === null || s === undefined) ? '' : String(s);
       return d.innerHTML;
     }
-    function carPhotos(car){
-      if(Array.isArray(car.photos) && car.photos.length){
-        return car.photos.filter(Boolean);
+    // Import z OTOMOTO zapisuje galerię zdjęć jako tekst z zakodowaną tablicą
+    // JSON (kolumna "image_urls", a czasem też "photos") - a nie jako
+    // prawdziwą tablicę Postgresa - dlatego trzeba to sparsować ręcznie.
+    function safeJsonArray(raw){
+      if(!raw) return [];
+      if(Array.isArray(raw)) return raw;
+      try{
+        var parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      }catch(e){
+        return [];
       }
+    }
+    function carPhotos(car){
+      var fromUrls = safeJsonArray(car.image_urls).filter(Boolean);
+      if(fromUrls.length) return fromUrls;
+      var fromPhotos = safeJsonArray(car.photos).filter(Boolean);
+      if(fromPhotos.length) return fromPhotos;
       if(car.image_url) return [car.image_url];
       return [];
     }
@@ -803,37 +818,71 @@
         '</div>';
     }
     // Rozbija surowy, sklejony myślnikami opis z importu OTOMOTO na czytelne
-    // sekcje: nagłówki (np. "Wyposażenie standardowe :", "Komfort"), listy
-    // punktowane (linie zaczynające się od "•") i zwykłe akapity.
-    var DESC_HEADING_WORDS = ['Komfort','Ładowanie','Systemy multimedialne','Reflektory','Wybrane wyposażenie','Bezpieczeństwo','Osiągi','Wnętrze','Lakier i tapicerka','Wyposażenie standardowe'];
+    // sekcje. Prawdziwe dane z importu wyglądają tak:
+    // - sekcje są rozdzielone długimi liniami myślników ("---...---")
+    // - nagłówki to krótkie frazy kończące się dwukropkiem (np. "Lakier i
+    //   tapicerka :") albo pojedyncze słowa-kategorie (np. "Komfort")
+    // - pojedyncze punkty czasem zaczynają się od "●" (może się zdarzyć też "•")
+    // - CAŁE kategorie wyposażenia (Komfort, Ładowanie, Systemy multimedialne,
+    //   Systemy wspomagające kierowcę, Reflektory) bywają sklejone w JEDEN
+    //   fragment bez żadnego rozdzielacza między nimi - dlatego dodatkowo
+    //   szukamy tych słów-kategorii W ŚRODKU fragmentu i dzielimy po nich.
+    // - w obrębie takiego sklejonego fragmentu pozycje wyposażenia mają kody
+    //   w stylu Audi (np. "9AU", "7AL", "GA1") - używamy tego wzorca, żeby
+    //   rozbić długi ciąg na osobne punkty listy.
+    var DESC_HEADING_WORDS = ['Komfort','Ładowanie','Systemy multimedialne','Systemy wspomagające kierowcę','Reflektory','Wybrane wyposażenie','Bezpieczeństwo','Osiągi','Wnętrze','Lakier i tapicerka','Wyposażenie standardowe'];
+    var CATEGORY_WORDS = ['Komfort','Ładowanie','Systemy multimedialne','Systemy wspomagające kierowcę','Reflektory','Bezpieczeństwo','Osiągi','Wnętrze'];
+    function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+    // Kategorię traktujemy jako nagłówek tylko, gdy zaraz po niej występuje
+    // wzorzec kodu katalogowego (np. "Reflektory 9TF Diody...") - to odróżnia
+    // prawdziwe nagłówki kategorii od przypadków, gdy słowo-kategoria jest
+    // częścią nazwy własnej wyposażenia (np. "8IY Reflektory Matrix LED").
+    var CATEGORY_SPLIT_RE = new RegExp('(' + CATEGORY_WORDS.map(escapeRegExp).join('|') + ')(?=\\s[0-9A-Z]{2,4}\\s[A-ZĄĆĘŁŃÓŚŹŻ0-9])', 'g');
+    // Rozbija długi, niesklejony ciąg wyposażenia na punkty listy, korzystając
+    // z wzorca krótkich kodów katalogowych (2-4 znaki, litery+cyfry) tuż przed
+    // kolejną pozycją zaczynającą się wielką literą.
+    var EQUIPMENT_CODE_SPLIT_RE = /\s(?=[0-9A-Z]{2,4}\s[A-ZĄĆĘŁŃÓŚŹŻ])/g;
+    function bulletizeEquipment(text){
+      var items = text.split(EQUIPMENT_CODE_SPLIT_RE).map(function(s){ return s.trim(); }).filter(Boolean);
+      if(items.length < 2) return '<p>' + esc(text.trim()) + '</p>';
+      return '<ul class="car-desc-list">' + items.map(function(i){ return '<li>' + esc(i) + '</li>'; }).join('') + '</ul>';
+    }
     function parseDescription(raw){
       if(!raw) return '';
-      var parts = raw.split(/\s*-{3,}\s*/).map(function(s){ return s.trim(); }).filter(Boolean);
+      var fragments = raw.split(/\s*-{3,}\s*/).map(function(s){ return s.trim(); }).filter(Boolean);
       var html = '';
-      var bulletBuffer = [];
-      function flushBullets(){
-        if(bulletBuffer.length){
-          html += '<ul class="car-desc-list">' + bulletBuffer.map(function(b){
-            return '<li>' + esc(b.replace(/^[•\-]\s*/,'')) + '</li>';
-          }).join('') + '</ul>';
-          bulletBuffer = [];
-        }
-      }
-      parts.forEach(function(part){
-        if(/^[•]/.test(part)){
-          bulletBuffer.push(part);
-          return;
-        }
-        flushBullets();
-        var withoutColon = part.replace(/\s*:$/,'').trim();
-        var isHeading = (part.length < 60 && /:$/.test(part)) || DESC_HEADING_WORDS.indexOf(withoutColon) !== -1;
+      fragments.forEach(function(fragment){
+        var withoutColon = fragment.replace(/\s*:$/,'').trim();
+        var isHeading = (fragment.length < 60 && /:$/.test(fragment)) || DESC_HEADING_WORDS.indexOf(withoutColon) !== -1;
         if(isHeading){
           html += '<h4 class="car-desc-heading">' + esc(withoutColon) + '</h4>';
-        } else {
-          html += '<p>' + esc(part) + '</p>';
+          return;
         }
+        if(/[•●]/.test(fragment)){
+          var chunks = fragment.split(/[•●]/);
+          var lead = chunks.shift().trim();
+          if(lead) html += '<p>' + esc(lead) + '</p>';
+          var bullets = chunks.map(function(c){ return c.trim(); }).filter(Boolean);
+          if(bullets.length){
+            html += '<ul class="car-desc-list">' + bullets.map(function(b){ return '<li>' + esc(b) + '</li>'; }).join('') + '</ul>';
+          }
+          return;
+        }
+        CATEGORY_SPLIT_RE.lastIndex = 0;
+        if(CATEGORY_SPLIT_RE.test(fragment)){
+          CATEGORY_SPLIT_RE.lastIndex = 0;
+          var parts = fragment.split(CATEGORY_SPLIT_RE).map(function(s){ return s.trim(); }).filter(Boolean);
+          parts.forEach(function(p){
+            if(CATEGORY_WORDS.indexOf(p) !== -1){
+              html += '<h5 class="car-desc-subheading">' + esc(p) + '</h5>';
+            } else {
+              html += bulletizeEquipment(p);
+            }
+          });
+          return;
+        }
+        html += '<p>' + esc(fragment) + '</p>';
       });
-      flushBullets();
       return html;
     }
     function detailRow(label, value){
@@ -894,8 +943,12 @@
       var descHtml = descParsed
         ? '<div class="car-detail-desc"><h2>Opis</h2><div class="car-desc-body collapsed" id="carDescBody">' + descParsed + '</div><span class="car-desc-more" id="carDescToggle">Rozwiń opis &#9660;</span></div>'
         : '';
-      var listingBtn = car.listing_url
-        ? '<a href="' + esc(car.listing_url) + '" target="_blank" rel="noopener" class="btn-outline-lg">Zobacz ogłoszenie</a>'
+      // Import z OTOMOTO zapisuje link do ogłoszenia w kolumnie "source_url"
+      // (kolumna "listing_url" zostaje jako zapasowa, gdyby ktoś kiedyś
+      // wpisywał dane ręcznie pod tą nazwą).
+      var listingHref = car.source_url || car.listing_url;
+      var listingBtn = listingHref
+        ? '<a href="' + esc(listingHref) + '" target="_blank" rel="noopener" class="btn-outline-lg">Zobacz ogłoszenie</a>'
         : '';
       root.innerHTML = '' +
         '<div class="car-detail-grid">' +
