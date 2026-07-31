@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sprzedaż — Wszystkie oferty | AUTORYTET</title>
+<title>Wynajem długoterminowy | AUTORYTET</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -562,6 +562,34 @@
     .car-detail-grid{grid-template-columns:1fr;gap:28px;}
     .page-hero{padding:56px 0 72px;}
   }
+  /* WYNAJEM DLUGOTERMINOWY - PODSTRONA (suwaki okresu najmu i limitu km) */
+  .rental-card{display:flex;flex-direction:column;}
+  .rental-badges{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+  .rental-badge{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:4px 10px;border-radius:20px;background:var(--bg);color:var(--gray);}
+  .rental-badge.available{background:rgba(228,36,27,0.08);color:var(--red);}
+  .rental-icons{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 8px;margin:14px 0;padding:14px 0;border-top:1px solid rgba(0,0,0,0.08);border-bottom:1px solid rgba(0,0,0,0.08);}
+  .rental-icon-item{display:flex;flex-direction:column;align-items:center;text-align:center;}
+  .rental-icon-item svg{width:20px;height:20px;margin-bottom:6px;stroke:var(--black);fill:none;stroke-width:1.6;}
+  .rental-icon-value{font-size:12px;font-weight:600;}
+  .rental-icon-label{font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:0.04em;}
+  .rental-sliders{margin:4px 0 14px;}
+  .rental-slider-row{margin-bottom:14px;}
+  .rental-slider-row label{display:flex;justify-content:space-between;font-size:12px;color:var(--gray);margin-bottom:6px;}
+  .rental-slider-row label strong{color:var(--black);font-weight:600;}
+  .rental-slider-row input[type="range"]{width:100%;accent-color:var(--red);}
+  .rental-price{padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);}
+  .rental-rate{font-family:'Oswald',sans-serif;font-size:22px;font-weight:600;}
+  .rental-rate small{font-size:11px;color:var(--gray);font-weight:400;text-transform:none;}
+  .rental-note{font-size:11px;color:var(--gray);margin-top:4px;}
+  .rental-actions{display:flex;gap:10px;margin-top:16px;}
+  .rental-actions a{flex:1;text-align:center;padding:11px 8px;font-family:'Oswald',sans-serif;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;}
+  .rental-actions .btn-red{background:var(--red);color:var(--white);}
+  .rental-actions .btn-red:hover{background:#c71f17;}
+  .rental-actions .btn-outline{border:1.5px solid var(--black);color:var(--black);}
+  .rental-actions .btn-outline:hover{background:var(--black);color:var(--white);}
+  @media(max-width:900px){
+    .rental-icons{gap:10px 6px;}
+  }
 </style>
 </head>
 <body>
@@ -571,7 +599,7 @@
     <ul class="nav-links">
       <li><a href="sprzedaz.html">Sprzedaż</a></li>
       <li><a href="/porownywarka-ofert">Porównywarka&nbsp;ofert</a></li>
-      <li><a href="wynajem.html">Wynajem</a></li>
+      <li><a href="wynajem.html" class="active">Wynajem</a></li>
       <li><a href="#finansowanie">Finansowanie</a></li>
       <li><a href="#ubezpieczenia">Ubezpieczenia</a></li>
       <li><a href="#kontakt">Kontakt</a></li>
@@ -634,9 +662,9 @@
 
 <section class="page-hero">
   <div class="wrap">
-    <span class="page-hero-eyebrow">Oferty</span>
-    <h1>Wszystkie samochody z naszego magazynu</h1>
-    <p>Przeglądaj pełną ofertę AUTORYTET — użyj filtrów, aby szybciej znaleźć auto dopasowane do Ciebie.</p>
+    <span class="page-hero-eyebrow">Wynajem długoterminowy</span>
+    <h1>Wynajmij auto z naszego magazynu</h1>
+    <p>Ustaw suwakiem okres najmu i roczny limit kilometrów — rata miesięczna przeliczy się automatycznie dla każdego auta.</p>
     <form class="search-panel" id="searchPanel">
       <div class="search-field">
         <label>Marka</label>
@@ -658,9 +686,9 @@
         </select>
       </div>
       <div class="search-field">
-        <label>Budżet do</label>
-        <select id="filterBudget">
-          <option value="">Bez limitu</option>
+        <label>Rodzaj paliwa</label>
+        <select id="filterFuel">
+          <option value="">Dowolny</option>
         </select>
       </div>
       <button type="submit" class="search-submit">Szukaj</button>
@@ -669,15 +697,15 @@
 </section>
 <section class="listings wrap" style="padding-top:64px;">
   <div class="section-head">
-    <h2>Oferty</h2>
+    <h2>Dostępne auta do wynajmu</h2>
     <p class="listing-count" id="listingCount">Wczytywanie ofert…</p>
   </div>
-  <div class="listing-grid" id="listingGrid"></div>
+  <div class="listing-grid rental-grid" id="listingGrid"></div>
 </section>
 <section class="cta-band" id="kontakt">
   <div class="wrap">
-    <h2>Nie znalazłeś idealnego auta?</h2>
-    <p>Napisz do nas, a certyfikowany doradca znajdzie je dla Ciebie — także spoza aktualnej oferty.</p>
+    <h2>Nie znalazłeś idealnego auta do wynajmu?</h2>
+    <p>Napisz do nas, a certyfikowany doradca dobierze auto i warunki najmu dopasowane do Ciebie — także spoza aktualnej oferty.</p>
     <a href="tel:+48690846006" class="btn-white">Zadzwoń do doradcy</a>
   </div>
 </section>
@@ -792,32 +820,86 @@
       }
       window.location.href = '/crm';
     });
-    // ---------- Wszystkie oferty (pełny magazyn) ----------
+    // ---------- Wynajem długoterminowy (auta z naszego magazynu) ----------
+    var CAR_ICONS = {
+      fuel: '<svg viewBox="0 0 24 24"><path d="M4 21V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14"></path><path d="M4 11h10"></path><path d="M16 8l2.5 2.5V17a1.5 1.5 0 0 0 3 0v-6l-2-2"></path><path d="M2 21h16"></path></svg>',
+      gearbox: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.2 2.2M16.2 16.2l2.2 2.2M5.6 18.4l2.2-2.2M16.2 7.8l2.2-2.2"></path></svg>',
+      power: '<svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"></path></svg>'
+    };
+    function esc(s){
+      return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    }
     function formatPrice(n){
       if(n === null || n === undefined || n === '') return null;
       return new Intl.NumberFormat('pl-PL').format(n) + ' zł';
     }
-    function carCardHtml(car){
-      var photo = car.image_url
-        ? '<img src="' + car.image_url + '" alt="' + (car.brand||'') + ' ' + (car.model||'') + '" style="width:100%;height:100%;object-fit:cover;">'
-        : '<span>Miejsce na zdjęcie</span>';
-      var price = formatPrice(car.price);
-      var monthly = formatPrice(car.monthly_payment);
-      var priceHtml = price ? price : 'Cena na zapytanie';
-      var monthlyHtml = monthly ? '<br><small>lub ' + monthly + ' / mies.</small>' : '';
-      var meta = [car.year, car.body_type].filter(Boolean).join(' · ');
+    function rentalIconItem(key, value, label){
+      if(value === null || value === undefined || value === '') return '';
       return '' +
-        '<a class="listing-card" href="auto.html?id=' + encodeURIComponent(car.id) + '">' +
+        '<div class="rental-icon-item">' + CAR_ICONS[key] +
+          '<div class="rental-icon-value">' + esc(value) + '</div>' +
+          '<div class="rental-icon-label">' + esc(label) + '</div>' +
+        '</div>';
+    }
+    // Szacunkowa rata najmu na podstawie ceny katalogowej auta, wybranego okresu
+    // (miesiące) i rocznego limitu kilometrów. To jest wzór POMOCNICZY do
+    // wizualizacji - podmień na rzeczywisty cennik najmu długoterminowego, gdy
+    // będzie gotowy (np. od partnera leasingowego / floty).
+    function estimateMonthlyRate(price, months, kmPerYear){
+      if(!price) return null;
+      var baseResidual = 0.80 - (months - 24) * 0.0045;
+      baseResidual = Math.max(0.45, Math.min(0.80, baseResidual));
+      var mileageFactor = 1 + ((kmPerYear - 10000) / 50000) * 0.35;
+      var monthlyBase = (price * (1 - baseResidual) / months) * mileageFactor;
+      var serviceFee = 250;
+      return Math.round((monthlyBase + serviceFee) / 10) * 10;
+    }
+    var RENTAL_CARS_BY_ID = {};
+    var RENTAL_DEFAULT_MONTHS = 36;
+    var RENTAL_DEFAULT_KM = 10000;
+    function rentalCardHtml(car){
+      RENTAL_CARS_BY_ID[car.id] = car;
+      var photo = car.image_url
+        ? '<img src="' + esc(car.image_url) + '" alt="' + esc((car.brand||'') + ' ' + (car.model||'')) + '" style="width:100%;height:100%;object-fit:cover;">'
+        : '<span>Miejsce na zdjęcie</span>';
+      var meta = [car.year, car.body_type].filter(Boolean).join(' · ');
+      var iconsHtml = [
+        rentalIconItem('fuel', car.fuel_type, 'Paliwo'),
+        rentalIconItem('gearbox', car.gearbox, 'Skrzynia'),
+        rentalIconItem('power', car.power ? (car.power + ' KM') : '', 'Moc')
+      ].filter(Boolean).join('');
+      var rate = estimateMonthlyRate(car.price, RENTAL_DEFAULT_MONTHS, RENTAL_DEFAULT_KM);
+      var rateHtml = rate ? (formatPrice(rate) + ' netto') : 'Rata na zapytanie';
+      return '' +
+        '<div class="listing-card rental-card" data-car-id="' + esc(car.id) + '">' +
           '<div class="listing-photo">' + photo + '</div>' +
           '<div class="listing-body">' +
-            '<h3>' + (car.brand || '') + ' ' + (car.model || '') + '</h3>' +
-            '<div class="listing-meta">' + meta + '</div>' +
-            '<div class="listing-foot">' +
-              '<div class="listing-price">' + priceHtml + monthlyHtml + '</div>' +
-              '<div class="listing-arrow">&#8594;</div>' +
+            '<div class="rental-badges"><span class="rental-badge available">Od ręki</span></div>' +
+            '<h3>' + esc(car.brand || '') + ' ' + esc(car.model || '') + '</h3>' +
+            '<div class="listing-meta">' + esc(meta) + '</div>' +
+            (iconsHtml ? '<div class="rental-icons">' + iconsHtml + '</div>' : '') +
+            '<div class="rental-sliders">' +
+              '<div class="rental-slider-row">' +
+                '<label>Okres najmu <strong class="rental-months-value">' + RENTAL_DEFAULT_MONTHS + ' mies.</strong></label>' +
+                '<input type="range" class="rental-slider" data-field="months" min="24" max="60" step="6" value="' + RENTAL_DEFAULT_MONTHS + '">' +
+              '</div>' +
+              '<div class="rental-slider-row">' +
+                '<label>Roczny limit km <strong class="rental-km-value">' + new Intl.NumberFormat('pl-PL').format(RENTAL_DEFAULT_KM) + ' km</strong></label>' +
+                '<input type="range" class="rental-slider" data-field="km" min="10000" max="60000" step="5000" value="' + RENTAL_DEFAULT_KM + '">' +
+              '</div>' +
+            '</div>' +
+            '<div class="rental-price">' +
+              '<div class="rental-rate">' + rateHtml + ' <small>/ mies.</small></div>' +
+              '<div class="rental-note">Rata szacunkowa — ostateczna oferta może się różnić.</div>' +
+            '</div>' +
+            '<div class="rental-actions">' +
+              '<a href="tel:+48690846006" class="btn-red">Kontakt</a>' +
+              '<a href="auto.html?id=' + encodeURIComponent(car.id) + '" class="btn-outline">Specyfikacja</a>' +
             '</div>' +
           '</div>' +
-        '</a>';
+        '</div>';
     }
     async function loadCars(filters){
       filters = filters || {};
@@ -828,7 +910,7 @@
       var query = sb.from('cars').select('*').eq('status', 'dostepny');
       if(filters.brand) query = query.eq('brand', filters.brand);
       if(filters.bodyType) query = query.eq('body_type', filters.bodyType);
-      if(filters.budget) query = query.lte('price', filters.budget);
+      if(filters.fuel) query = query.eq('fuel_type', filters.fuel);
       // Limit 500 - pokazuje cały realistyczny magazyn; jeśli ofert jest więcej, daj znać, dodamy paginację.
       query = query.order('created_at', { ascending: false }).limit(500);
       var result = await query;
@@ -842,20 +924,33 @@
         if(countEl) countEl.textContent = '0 ofert';
         return;
       }
-      grid.innerHTML = result.data.map(carCardHtml).join('');
+      RENTAL_CARS_BY_ID = {};
+      grid.innerHTML = result.data.map(rentalCardHtml).join('');
       if(countEl) countEl.textContent = result.data.length + (result.data.length === 1 ? ' oferta' : ' ofert');
     }
     loadCars();
-    (function populateBudgetOptions(){
-      var sel = document.getElementById('filterBudget');
-      if(!sel) return;
-      for(var v = 100000; v <= 2000000; v += 50000){
-        var opt = document.createElement('option');
-        opt.value = v;
-        opt.textContent = new Intl.NumberFormat('pl-PL').format(v) + ' zł';
-        sel.appendChild(opt);
+    // Suwaki okresu najmu i limitu km - przeliczają ratę na bieżąco, dla danej karty auta
+    document.addEventListener('input', function(e){
+      var slider = e.target;
+      if(!slider.classList || !slider.classList.contains('rental-slider')) return;
+      var card = slider.closest('.rental-card');
+      if(!card) return;
+      var carId = card.getAttribute('data-car-id');
+      var car = RENTAL_CARS_BY_ID[carId];
+      if(!car) return;
+      var monthsInput = card.querySelector('[data-field="months"]');
+      var kmInput = card.querySelector('[data-field="km"]');
+      var months = parseInt(monthsInput.value, 10);
+      var km = parseInt(kmInput.value, 10);
+      card.querySelector('.rental-months-value').textContent = months + ' mies.';
+      card.querySelector('.rental-km-value').textContent = new Intl.NumberFormat('pl-PL').format(km) + ' km';
+      var rate = estimateMonthlyRate(car.price, months, km);
+      var rateEl = card.querySelector('.rental-rate');
+      if(rateEl){
+        var rateHtml = rate ? (formatPrice(rate) + ' netto') : 'Rata na zapytanie';
+        rateEl.innerHTML = rateHtml + ' <small>/ mies.</small>';
       }
-    })();
+    });
     async function populateBrandOptions(){
       var sel = document.getElementById('filterBrand');
       if(!sel) return;
@@ -870,14 +965,28 @@
       });
     }
     populateBrandOptions();
+    async function populateFuelOptions(){
+      var sel = document.getElementById('filterFuel');
+      if(!sel) return;
+      var result = await sb.from('cars').select('fuel_type').eq('status', 'dostepny');
+      if(result.error || !result.data) return;
+      var fuels = [...new Set(result.data.map(function(r){ return r.fuel_type; }).filter(Boolean))].sort();
+      fuels.forEach(function(fl){
+        var opt = document.createElement('option');
+        opt.value = fl;
+        opt.textContent = fl;
+        sel.appendChild(opt);
+      });
+    }
+    populateFuelOptions();
     var searchPanelEl = document.getElementById('searchPanel');
     if(searchPanelEl){
       searchPanelEl.addEventListener('submit', function(e){
         e.preventDefault();
         var brand = document.getElementById('filterBrand').value;
         var bodyType = document.getElementById('filterBodyType').value;
-        var budget = document.getElementById('filterBudget').value;
-        loadCars({ brand: brand, bodyType: bodyType, budget: budget });
+        var fuel = document.getElementById('filterFuel').value;
+        loadCars({ brand: brand, bodyType: bodyType, fuel: fuel });
       });
     }
     // ---------- Edytowalny tekst strony (tylko dla administratora) ----------
