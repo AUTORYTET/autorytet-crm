@@ -261,6 +261,8 @@
     border-radius:50%;font-size:16px;transition:all .2s;
   }
   .listing-card:hover .listing-arrow{background:var(--red);border-color:var(--red);color:var(--white);}
+  a.listing-card{display:block;color:inherit;}
+  a.listing-card:hover{text-decoration:none;}
   /* TRUST / STAMP SECTION */
   .trust{
     background:var(--black);color:var(--white);
@@ -866,7 +868,7 @@
       var monthlyHtml = monthly ? '<br><small>lub ' + monthly + ' / mies.</small>' : '';
       var meta = [car.year, car.body_type].filter(Boolean).join(' · ');
       return '' +
-        '<div class="listing-card">' +
+        '<a class="listing-card" href="auto.html?id=' + encodeURIComponent(car.id) + '">' +
           '<div class="listing-photo">' + photo + '</div>' +
           '<div class="listing-body">' +
             '<h3>' + (car.brand || '') + ' ' + (car.model || '') + '</h3>' +
@@ -876,7 +878,7 @@
               '<div class="listing-arrow">&#8594;</div>' +
             '</div>' +
           '</div>' +
-        '</div>';
+        '</a>';
     }
     async function loadCars(filters){
       filters = filters || {};
