@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Wynajem długoterminowy | AUTORYTET</title>
+<title>Moje konto — Panel klienta | AUTORYTET</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -562,33 +562,102 @@
     .car-detail-grid{grid-template-columns:1fr;gap:28px;}
     .page-hero{padding:56px 0 72px;}
   }
-  /* WYNAJEM DLUGOTERMINOWY - PODSTRONA (suwaki okresu najmu i limitu km) */
-  .rental-card{display:flex;flex-direction:column;}
-  .rental-badges{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
-  .rental-badge{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:4px 10px;border-radius:20px;background:var(--bg);color:var(--gray);}
-  .rental-badge.available{background:rgba(228,36,27,0.08);color:var(--red);}
-  .rental-icons{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 8px;margin:14px 0;padding:14px 0;border-top:1px solid rgba(0,0,0,0.08);border-bottom:1px solid rgba(0,0,0,0.08);}
-  .rental-icon-item{display:flex;flex-direction:column;align-items:center;text-align:center;}
-  .rental-icon-item svg{width:20px;height:20px;margin-bottom:6px;stroke:var(--black);fill:none;stroke-width:1.6;}
-  .rental-icon-value{font-size:12px;font-weight:600;}
-  .rental-icon-label{font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:0.04em;}
-  .rental-sliders{margin:4px 0 14px;}
-  .rental-slider-row{margin-bottom:14px;}
-  .rental-slider-row label{display:flex;justify-content:space-between;font-size:12px;color:var(--gray);margin-bottom:6px;}
-  .rental-slider-row label strong{color:var(--black);font-weight:600;}
-  .rental-slider-row input[type="range"]{width:100%;accent-color:var(--red);}
-  .rental-price{padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);}
-  .rental-rate{font-family:'Oswald',sans-serif;font-size:22px;font-weight:600;}
-  .rental-rate small{font-size:11px;color:var(--gray);font-weight:400;text-transform:none;}
-  .rental-note{font-size:11px;color:var(--gray);margin-top:4px;}
-  .rental-actions{display:flex;gap:10px;margin-top:16px;}
-  .rental-actions a{flex:1;text-align:center;padding:11px 8px;font-family:'Oswald',sans-serif;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;}
-  .rental-actions .btn-red{background:var(--red);color:var(--white);}
-  .rental-actions .btn-red:hover{background:#c71f17;}
-  .rental-actions .btn-outline{border:1.5px solid var(--black);color:var(--black);}
-  .rental-actions .btn-outline:hover{background:var(--black);color:var(--white);}
-  @media(max-width:900px){
-    .rental-icons{gap:10px 6px;}
+
+  /* MOJE KONTO - PODSTRONA (panel klienta) */
+  .konto-hero{ background:var(--red,#E4241B); color:#fff; padding:64px 0 40px; text-align:center; }
+  .konto-hero-eyebrow{
+    font-size:13px; font-weight:600; color:#fff; text-transform:uppercase; letter-spacing:0.12em;
+    margin-bottom:16px; display:block; opacity:0.85;
+  }
+  .konto-hero h1{ font-size:clamp(30px,5vw,48px); max-width:720px; margin:0 auto 16px; }
+  .konto-hero p{ font-size:15px; color:rgba(255,255,255,0.85); max-width:600px; margin:0 auto; }
+  .konto-section{ background:var(--red,#E4241B); padding:40px 0 80px; }
+
+  .konto-auth-wrap{ max-width:480px; margin:0 auto; background:#fff; border-radius:14px; padding:36px 40px; }
+  .konto-tabs{ display:flex; margin-bottom:24px; border-radius:8px; overflow:hidden; border:1.5px solid rgba(0,0,0,0.1); }
+  .konto-tab{
+    flex:1; background:#fff; border:none; padding:13px; font-family:'Oswald',sans-serif; font-size:13px;
+    font-weight:600; text-transform:uppercase; letter-spacing:0.03em; cursor:pointer; color:var(--black,#111111);
+    transition:all .15s;
+  }
+  .konto-tab.active{ background:var(--black,#111111); color:#fff; }
+  .konto-auth-form{ display:none; }
+  .konto-auth-form.active{ display:flex; }
+  .auth-error.auth-success{ color:#1a7a1a; }
+  .konto-form-row-split{ display:grid; grid-template-columns:1fr 1fr; gap:0 16px; }
+
+  .konto-dashboard-top{
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;
+    background:#fff; border-radius:12px; padding:18px 24px; margin-bottom:20px;
+  }
+  .konto-dashboard-top .who{ font-size:14px; color:#333; }
+  .konto-dashboard-top .who b{ color:var(--black,#111111); }
+  .konto-logout-btn{
+    background:none; border:1.5px solid rgba(0,0,0,0.16); color:var(--black,#111111); padding:9px 18px;
+    border-radius:6px; font-size:12.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.03em;
+    cursor:pointer; font-family:'Oswald',sans-serif; transition:all .15s;
+  }
+  .konto-logout-btn:hover{ border-color:var(--black,#111111); background:var(--bg,#F3F3F1); }
+
+  .konto-promo-banner{
+    background:var(--black,#111111); color:#fff; border-radius:12px; padding:18px 24px; margin-bottom:24px;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  }
+  .konto-promo-banner .badge{
+    background:var(--red,#E4241B); color:#fff; font-family:'Oswald',sans-serif; font-weight:700; font-size:13px;
+    padding:8px 14px; border-radius:20px; white-space:nowrap;
+  }
+  .konto-promo-banner p{ margin:0; font-size:13.5px; color:rgba(255,255,255,0.85); }
+
+  .konto-layout{ display:grid; grid-template-columns:1fr 340px; gap:24px; align-items:start; }
+  .konto-browse{ background:var(--bg,#F3F3F1); border-radius:12px; padding:24px; }
+  .konto-browse .search-panel{ transform:none; box-shadow:none; border:1px solid rgba(0,0,0,0.08); margin-bottom:20px; }
+  .konto-cart{ background:#fff; border-radius:12px; padding:22px; position:sticky; top:96px; }
+  .konto-cart h3{ font-family:'Oswald',sans-serif; font-size:17px; margin:0 0 4px; }
+  .konto-cart-empty{ font-size:13px; color:var(--gray,#9A9A9A); padding:20px 0; text-align:center; }
+  .konto-cart-item{
+    display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0;
+    border-bottom:1px solid rgba(0,0,0,0.08); font-size:13px;
+  }
+  .konto-cart-item .name{ font-weight:600; }
+  .konto-cart-item .price{ color:var(--gray,#9A9A9A); font-size:12px; }
+  .konto-cart-remove{ background:none; border:none; color:var(--red,#E4241B); cursor:pointer; font-size:17px; line-height:1; padding:2px 6px; }
+  .konto-cart-reserve-btn{
+    width:100%; margin-top:16px; background:var(--red,#E4241B); color:#fff; border:none; border-radius:6px;
+    padding:14px; font-family:'Oswald',sans-serif; font-size:13px; font-weight:600; text-transform:uppercase;
+    letter-spacing:0.03em; cursor:pointer; transition:background .2s;
+  }
+  .konto-cart-reserve-btn:hover{ background:#c71f17; }
+  .konto-cart-reserve-btn:disabled{ opacity:0.5; cursor:default; }
+  .konto-cart-status{ margin-top:12px; font-size:12.5px; min-height:16px; }
+  .konto-cart-status.success{ color:#1a7a1a; }
+  .konto-cart-status.error{ color:var(--red,#E4241B); }
+  .konto-add-cart-btn{
+    background:var(--black,#111111); color:#fff; border:none; border-radius:4px; padding:9px 14px;
+    font-size:11.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.03em; cursor:pointer;
+    font-family:'Oswald',sans-serif; transition:background .2s; white-space:nowrap;
+  }
+  .konto-add-cart-btn:hover{ background:var(--red,#E4241B); }
+  .konto-add-cart-btn.added{ background:#1a7a1a; }
+  .konto-reservations{ margin-top:28px; }
+  .konto-reservations h4{
+    font-family:'Oswald',sans-serif; font-size:14px; margin:0 0 10px; color:var(--gray,#9A9A9A);
+    text-transform:uppercase; letter-spacing:0.03em;
+  }
+  .konto-reservation-row{
+    display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:8px 0;
+    border-bottom:1px solid rgba(0,0,0,0.06); color:#333;
+  }
+  .konto-reservation-row .status{ font-size:11px; text-transform:uppercase; color:var(--red,#E4241B); font-weight:600; white-space:nowrap; }
+  .konto-reservations-empty{ font-size:12.5px; color:var(--gray,#9A9A9A); }
+
+  @media (max-width:900px){
+    .konto-layout{ grid-template-columns:1fr; }
+    .konto-cart{ position:static; }
+  }
+  @media (max-width:560px){
+    .konto-auth-wrap{ padding:26px; }
+    .konto-form-row-split{ grid-template-columns:1fr; }
   }
 </style>
 </head>
@@ -599,7 +668,7 @@
     <ul class="nav-links">
       <li><a href="sprzedaz.html">Sprzedaż</a></li>
       <li><a href="/porownywarka-ofert">Porównywarka&nbsp;ofert</a></li>
-      <li><a href="wynajem.html" class="active">Wynajem</a></li>
+      <li><a href="wynajem.html">Wynajem</a></li>
       <li><a href="finansowanie.html">Finansowanie</a></li>
       <li><a href="ubezpieczenia.html">Ubezpieczenia</a></li>
       <li><a href="kontakt.html">Kontakt</a></li>
@@ -625,23 +694,6 @@
 </script>
 <!-- Hidden admin/CRM access -->
 <div id="adminDot" title="" aria-hidden="true"></div>
-<!-- Client login modal -->
-<div id="clientLoginModal" class="auth-modal-overlay">
-  <div class="auth-modal">
-    <button class="auth-close" data-close="clientLoginModal">&times;</button>
-    <div class="auth-modal-logo">AUTORYTET</div>
-    <h3>Zaloguj się do swojego konta</h3>
-    <p class="auth-sub">Sprawdź status swojego zamówienia, finansowania lub wynajmu.</p>
-    <form id="clientLoginForm" class="auth-form">
-      <label>Adres e-mail</label>
-      <input type="email" id="clientEmail" required placeholder="twoj@email.pl">
-      <label>Hasło</label>
-      <input type="password" id="clientPassword" required placeholder="••••••••">
-      <div class="auth-error" id="clientLoginError"></div>
-      <button type="submit" class="btn-red auth-submit">Zaloguj się</button>
-    </form>
-  </div>
-</div>
 <!-- Admin login modal -->
 <div id="adminLoginModal" class="auth-modal-overlay">
   <div class="auth-modal">
@@ -660,53 +712,124 @@
   </div>
 </div>
 
-<section class="page-hero">
+<section class="konto-hero">
   <div class="wrap">
-    <span class="page-hero-eyebrow">Wynajem długoterminowy</span>
-    <h1>Wynajmij auto z naszego magazynu</h1>
-    <p>Ustaw suwakiem okres najmu i roczny limit kilometrów — rata miesięczna przeliczy się automatycznie dla każdego auta.</p>
-    <form class="search-panel" id="searchPanel">
-      <div class="search-field">
-        <label>Marka</label>
-        <select id="filterBrand">
-          <option value="">Wszystkie marki</option>
-        </select>
-      </div>
-      <div class="search-field">
-        <label>Typ nadwozia</label>
-        <select id="filterBodyType">
-          <option value="">Dowolny</option>
-          <option value="SUV">SUV</option>
-          <option value="Sedan">Sedan</option>
-          <option value="Kombi">Kombi</option>
-          <option value="Coupe">Coupe</option>
-          <option value="Hatchback">Hatchback</option>
-          <option value="Cabrio">Cabrio</option>
-          <option value="Van">Van</option>
-        </select>
-      </div>
-      <div class="search-field">
-        <label>Rodzaj paliwa</label>
-        <select id="filterFuel">
-          <option value="">Dowolny</option>
-        </select>
-      </div>
-      <button type="submit" class="search-submit">Szukaj</button>
-    </form>
+    <span class="konto-hero-eyebrow">Panel klienta</span>
+    <h1>Twoje konto AUTORYTET</h1>
+    <p>Zaloguj się lub załóż konto, żeby przeglądać ofertę, odkładać auta do koszyka i rezerwować je online — z dodatkowym rabatem -15% na usługi AUTORYTET.</p>
   </div>
 </section>
-<section class="listings wrap" style="padding-top:64px;">
-  <div class="section-head">
-    <h2>Dostępne auta do wynajmu</h2>
-    <p class="listing-count" id="listingCount">Wczytywanie ofert…</p>
-  </div>
-  <div class="listing-grid rental-grid" id="listingGrid"></div>
-</section>
-<section class="cta-band" id="kontakt">
+
+<section class="konto-section">
   <div class="wrap">
-    <h2>Nie znalazłeś idealnego auta do wynajmu?</h2>
-    <p>Napisz do nas, a certyfikowany doradca dobierze auto i warunki najmu dopasowane do Ciebie — także spoza aktualnej oferty.</p>
-    <a href="tel:+48690846006" class="btn-white">Zadzwoń do doradcy</a>
+
+    <!-- WIDOK: NIEZALOGOWANY -->
+    <div id="kontoAuthSection">
+      <div class="konto-auth-wrap">
+        <div class="konto-tabs">
+          <button type="button" class="konto-tab active" id="kontoTabLogin">Zaloguj się</button>
+          <button type="button" class="konto-tab" id="kontoTabRegister">Zarejestruj się</button>
+        </div>
+
+        <form id="clientLoginForm" class="auth-form konto-auth-form active">
+          <label>Adres e-mail</label>
+          <input type="email" id="clientEmail" required placeholder="twoj@email.pl">
+          <label>Hasło</label>
+          <input type="password" id="clientPassword" required placeholder="••••••••">
+          <div class="auth-error" id="clientLoginError"></div>
+          <button type="submit" class="btn-red auth-submit">Zaloguj się</button>
+        </form>
+
+        <form id="clientRegisterForm" class="auth-form konto-auth-form">
+          <label>Imię i nazwisko</label>
+          <input type="text" id="registerName" required placeholder="Jan Kowalski">
+          <div class="konto-form-row-split">
+            <div>
+              <label>Telefon</label>
+              <input type="tel" id="registerPhone" required placeholder="+48 ...">
+            </div>
+            <div>
+              <label>Adres e-mail</label>
+              <input type="email" id="registerEmail" required placeholder="twoj@email.pl">
+            </div>
+          </div>
+          <label>Hasło</label>
+          <input type="password" id="registerPassword" required placeholder="min. 6 znaków">
+          <label>Powtórz hasło</label>
+          <input type="password" id="registerPasswordConfirm" required placeholder="••••••••">
+          <div class="auth-error" id="registerError"></div>
+          <button type="submit" class="btn-red auth-submit">Załóż konto</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- WIDOK: ZALOGOWANY (Panel klienta) -->
+    <div id="kontoDashboardSection" style="display:none;">
+
+      <div class="konto-dashboard-top">
+        <div class="who">Zalogowano jako <b id="kontoUserEmail">—</b></div>
+        <button type="button" class="konto-logout-btn" id="kontoLogoutBtn">Wyloguj się</button>
+      </div>
+
+      <div class="konto-promo-banner">
+        <span class="badge">-15%</span>
+        <p>Zarezerwuj auto online przez koszyk poniżej, a otrzymasz dodatkowy rabat -15% na usługi AUTORYTET (finansowanie, ubezpieczenie, przygotowanie auta).</p>
+      </div>
+
+      <div class="konto-layout">
+        <div class="konto-browse">
+          <form class="search-panel" id="searchPanel">
+            <div class="search-field">
+              <label>Marka</label>
+              <select id="filterBrand">
+                <option value="">Wszystkie marki</option>
+              </select>
+            </div>
+            <div class="search-field">
+              <label>Typ nadwozia</label>
+              <select id="filterBodyType">
+                <option value="">Dowolny</option>
+                <option value="SUV">SUV</option>
+                <option value="Sedan">Sedan</option>
+                <option value="Kombi">Kombi</option>
+                <option value="Coupe">Coupe</option>
+                <option value="Hatchback">Hatchback</option>
+                <option value="Cabrio">Cabrio</option>
+                <option value="Van">Van</option>
+              </select>
+            </div>
+            <div class="search-field">
+              <label>Budżet do</label>
+              <select id="filterBudget">
+                <option value="">Bez limitu</option>
+              </select>
+            </div>
+            <button type="submit" class="search-submit">Szukaj</button>
+          </form>
+          <div class="section-head">
+            <h2>Przeglądaj oferty</h2>
+            <p class="listing-count" id="listingCount">Wczytywanie ofert…</p>
+          </div>
+          <div class="listing-grid" id="listingGrid"></div>
+        </div>
+
+        <div class="konto-cart">
+          <h3>Twój koszyk</h3>
+          <div id="kontoCartItems">
+            <div class="konto-cart-empty">Koszyk jest pusty — dodaj auto z listy obok.</div>
+          </div>
+          <button type="button" class="konto-cart-reserve-btn" id="kontoReserveBtn" disabled>Zarezerwuj online (-15%)</button>
+          <div class="konto-cart-status" id="kontoCartStatus"></div>
+
+          <div class="konto-reservations">
+            <h4>Twoje rezerwacje</h4>
+            <div id="kontoReservationsList"><div class="konto-reservations-empty">Brak wcześniejszych rezerwacji.</div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
   </div>
 </section>
 <footer>
@@ -791,7 +914,7 @@
         errEl.textContent = 'Nieprawidłowy e-mail lub hasło.';
         return;
       }
-      window.location.href = '/konto';
+      showDashboard(result.data.user);
     });
     // Admin login
     document.getElementById('adminLoginForm').addEventListener('submit', async function(e){
@@ -815,83 +938,36 @@
       }
       window.location.href = '/crm';
     });
-    // ---------- Wynajem długoterminowy (auta z naszego magazynu) ----------
-    var CAR_ICONS = {
-      fuel: '<svg viewBox="0 0 24 24"><path d="M4 21V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14"></path><path d="M4 11h10"></path><path d="M16 8l2.5 2.5V17a1.5 1.5 0 0 0 3 0v-6l-2-2"></path><path d="M2 21h16"></path></svg>',
-      gearbox: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.2 2.2M16.2 16.2l2.2 2.2M5.6 18.4l2.2-2.2M16.2 7.8l2.2-2.2"></path></svg>',
-      power: '<svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"></path></svg>'
-    };
-    function esc(s){
-      return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function(c){
-        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-      });
-    }
+    // ---------- Wszystkie oferty (pełny magazyn) ----------
     function formatPrice(n){
       if(n === null || n === undefined || n === '') return null;
       return new Intl.NumberFormat('pl-PL').format(n) + ' zł';
     }
-    function rentalIconItem(key, value, label){
-      if(value === null || value === undefined || value === '') return '';
-      return '' +
-        '<div class="rental-icon-item">' + CAR_ICONS[key] +
-          '<div class="rental-icon-value">' + esc(value) + '</div>' +
-          '<div class="rental-icon-label">' + esc(label) + '</div>' +
-        '</div>';
-    }
-    // Szacunkowa rata najmu na podstawie ceny katalogowej auta, wybranego okresu
-    // (miesiące) i rocznego limitu kilometrów. To jest wzór POMOCNICZY do
-    // wizualizacji - podmień na rzeczywisty cennik najmu długoterminowego, gdy
-    // będzie gotowy (np. od partnera leasingowego / floty).
-    function estimateMonthlyRate(price, months, kmPerYear){
-      if(!price) return null;
-      var baseResidual = 0.80 - (months - 24) * 0.0045;
-      baseResidual = Math.max(0.45, Math.min(0.80, baseResidual));
-      var mileageFactor = 1 + ((kmPerYear - 10000) / 50000) * 0.35;
-      var monthlyBase = (price * (1 - baseResidual) / months) * mileageFactor;
-      var serviceFee = 250;
-      return Math.round((monthlyBase + serviceFee) / 10) * 10;
-    }
-    var RENTAL_CARS_BY_ID = {};
-    var RENTAL_DEFAULT_MONTHS = 36;
-    var RENTAL_DEFAULT_KM = 10000;
-    function rentalCardHtml(car){
-      RENTAL_CARS_BY_ID[car.id] = car;
+    function carCardHtml(car){
       var photo = car.image_url
-        ? '<img src="' + esc(car.image_url) + '" alt="' + esc((car.brand||'') + ' ' + (car.model||'')) + '" style="width:100%;height:100%;object-fit:cover;">'
+        ? '<img src="' + car.image_url + '" alt="' + (car.brand||'') + ' ' + (car.model||'') + '" style="width:100%;height:100%;object-fit:cover;">'
         : '<span>Miejsce na zdjęcie</span>';
+      var price = formatPrice(car.price);
+      var monthly = formatPrice(car.monthly_payment);
+      var priceHtml = price ? price : 'Cena na zapytanie';
+      var monthlyHtml = monthly ? '<br><small>lub ' + monthly + ' / mies.</small>' : '';
       var meta = [car.year, car.body_type].filter(Boolean).join(' · ');
-      var iconsHtml = [
-        rentalIconItem('fuel', car.fuel_type, 'Paliwo'),
-        rentalIconItem('gearbox', car.gearbox, 'Skrzynia'),
-        rentalIconItem('power', car.power ? (car.power + ' KM') : '', 'Moc')
-      ].filter(Boolean).join('');
-      var rate = estimateMonthlyRate(car.price, RENTAL_DEFAULT_MONTHS, RENTAL_DEFAULT_KM);
-      var rateHtml = rate ? (formatPrice(rate) + ' netto') : 'Rata na zapytanie';
+      var carId = encodeURIComponent(car.id);
+      var brandAttr = (car.brand || '').replace(/"/g, '&quot;');
+      var modelAttr = (car.model || '').replace(/"/g, '&quot;');
       return '' +
-        '<div class="listing-card rental-card" data-car-id="' + esc(car.id) + '">' +
-          '<div class="listing-photo">' + photo + '</div>' +
-          '<div class="listing-body">' +
-            '<div class="rental-badges"><span class="rental-badge available">Od ręki</span></div>' +
-            '<h3>' + esc(car.brand || '') + ' ' + esc(car.model || '') + '</h3>' +
-            '<div class="listing-meta">' + esc(meta) + '</div>' +
-            (iconsHtml ? '<div class="rental-icons">' + iconsHtml + '</div>' : '') +
-            '<div class="rental-sliders">' +
-              '<div class="rental-slider-row">' +
-                '<label>Okres najmu <strong class="rental-months-value">' + RENTAL_DEFAULT_MONTHS + ' mies.</strong></label>' +
-                '<input type="range" class="rental-slider" data-field="months" min="24" max="60" step="6" value="' + RENTAL_DEFAULT_MONTHS + '">' +
-              '</div>' +
-              '<div class="rental-slider-row">' +
-                '<label>Roczny limit km <strong class="rental-km-value">' + new Intl.NumberFormat('pl-PL').format(RENTAL_DEFAULT_KM) + ' km</strong></label>' +
-                '<input type="range" class="rental-slider" data-field="km" min="10000" max="60000" step="5000" value="' + RENTAL_DEFAULT_KM + '">' +
-              '</div>' +
+        '<div class="listing-card">' +
+          '<a href="auto.html?id=' + carId + '" style="display:block;color:inherit;text-decoration:none;">' +
+            '<div class="listing-photo">' + photo + '</div>' +
+            '<div class="listing-body">' +
+              '<h3>' + (car.brand || '') + ' ' + (car.model || '') + '</h3>' +
+              '<div class="listing-meta">' + meta + '</div>' +
+              '<div class="listing-price">' + priceHtml + monthlyHtml + '</div>' +
             '</div>' +
-            '<div class="rental-price">' +
-              '<div class="rental-rate">' + rateHtml + ' <small>/ mies.</small></div>' +
-              '<div class="rental-note">Rata szacunkowa — ostateczna oferta może się różnić.</div>' +
-            '</div>' +
-            '<div class="rental-actions">' +
-              '<a href="tel:+48690846006" class="btn-red">Kontakt</a>' +
-              '<a href="auto.html?id=' + encodeURIComponent(car.id) + '" class="btn-outline">Specyfikacja</a>' +
+          '</a>' +
+          '<div class="listing-body" style="padding-top:0;">' +
+            '<div class="listing-foot" style="border-top:none;padding-top:4px;">' +
+              '<button type="button" class="konto-add-cart-btn" data-car-id="' + car.id + '" data-car-brand="' + brandAttr + '" data-car-model="' + modelAttr + '" data-car-price="' + (car.price || '') + '">Dodaj do koszyka</button>' +
             '</div>' +
           '</div>' +
         '</div>';
@@ -905,7 +981,7 @@
       var query = sb.from('cars').select('*').eq('status', 'dostepny');
       if(filters.brand) query = query.eq('brand', filters.brand);
       if(filters.bodyType) query = query.eq('body_type', filters.bodyType);
-      if(filters.fuel) query = query.eq('fuel_type', filters.fuel);
+      if(filters.budget) query = query.lte('price', filters.budget);
       // Limit 500 - pokazuje cały realistyczny magazyn; jeśli ofert jest więcej, daj znać, dodamy paginację.
       query = query.order('created_at', { ascending: false }).limit(500);
       var result = await query;
@@ -919,33 +995,19 @@
         if(countEl) countEl.textContent = '0 ofert';
         return;
       }
-      RENTAL_CARS_BY_ID = {};
-      grid.innerHTML = result.data.map(rentalCardHtml).join('');
+      grid.innerHTML = result.data.map(carCardHtml).join('');
       if(countEl) countEl.textContent = result.data.length + (result.data.length === 1 ? ' oferta' : ' ofert');
     }
-    loadCars();
-    // Suwaki okresu najmu i limitu km - przeliczają ratę na bieżąco, dla danej karty auta
-    document.addEventListener('input', function(e){
-      var slider = e.target;
-      if(!slider.classList || !slider.classList.contains('rental-slider')) return;
-      var card = slider.closest('.rental-card');
-      if(!card) return;
-      var carId = card.getAttribute('data-car-id');
-      var car = RENTAL_CARS_BY_ID[carId];
-      if(!car) return;
-      var monthsInput = card.querySelector('[data-field="months"]');
-      var kmInput = card.querySelector('[data-field="km"]');
-      var months = parseInt(monthsInput.value, 10);
-      var km = parseInt(kmInput.value, 10);
-      card.querySelector('.rental-months-value').textContent = months + ' mies.';
-      card.querySelector('.rental-km-value').textContent = new Intl.NumberFormat('pl-PL').format(km) + ' km';
-      var rate = estimateMonthlyRate(car.price, months, km);
-      var rateEl = card.querySelector('.rental-rate');
-      if(rateEl){
-        var rateHtml = rate ? (formatPrice(rate) + ' netto') : 'Rata na zapytanie';
-        rateEl.innerHTML = rateHtml + ' <small>/ mies.</small>';
+    (function populateBudgetOptions(){
+      var sel = document.getElementById('filterBudget');
+      if(!sel) return;
+      for(var v = 100000; v <= 2000000; v += 50000){
+        var opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = new Intl.NumberFormat('pl-PL').format(v) + ' zł';
+        sel.appendChild(opt);
       }
-    });
+    })();
     async function populateBrandOptions(){
       var sel = document.getElementById('filterBrand');
       if(!sel) return;
@@ -959,29 +1021,14 @@
         sel.appendChild(opt);
       });
     }
-    populateBrandOptions();
-    async function populateFuelOptions(){
-      var sel = document.getElementById('filterFuel');
-      if(!sel) return;
-      var result = await sb.from('cars').select('fuel_type').eq('status', 'dostepny');
-      if(result.error || !result.data) return;
-      var fuels = [...new Set(result.data.map(function(r){ return r.fuel_type; }).filter(Boolean))].sort();
-      fuels.forEach(function(fl){
-        var opt = document.createElement('option');
-        opt.value = fl;
-        opt.textContent = fl;
-        sel.appendChild(opt);
-      });
-    }
-    populateFuelOptions();
     var searchPanelEl = document.getElementById('searchPanel');
     if(searchPanelEl){
       searchPanelEl.addEventListener('submit', function(e){
         e.preventDefault();
         var brand = document.getElementById('filterBrand').value;
         var bodyType = document.getElementById('filterBodyType').value;
-        var fuel = document.getElementById('filterFuel').value;
-        loadCars({ brand: brand, bodyType: bodyType, fuel: fuel });
+        var budget = document.getElementById('filterBudget').value;
+        loadCars({ brand: brand, bodyType: bodyType, budget: budget });
       });
     }
     // ---------- Edytowalny tekst strony (tylko dla administratora) ----------
@@ -1033,6 +1080,230 @@
       }
     }
     checkAdminEditMode();
+
+    // ---------- Panel klienta: logowanie / rejestracja / koszyk / rezerwacje ----------
+    var kontoCurrentUser = null;
+    var kontoCart = [];
+
+    function showAuthPanel(){
+      var authSection = document.getElementById('kontoAuthSection');
+      var dashSection = document.getElementById('kontoDashboardSection');
+      if(authSection) authSection.style.display = '';
+      if(dashSection) dashSection.style.display = 'none';
+      kontoCurrentUser = null;
+      // Zawsze wracaj do zakładki logowania (a nie rejestracji), gdy panel się pokazuje na nowo
+      var tabLogin = document.getElementById('kontoTabLogin');
+      var tabRegister = document.getElementById('kontoTabRegister');
+      var loginForm = document.getElementById('clientLoginForm');
+      var registerForm = document.getElementById('clientRegisterForm');
+      if(tabLogin && tabRegister && loginForm && registerForm){
+        tabLogin.classList.add('active');
+        tabRegister.classList.remove('active');
+        loginForm.classList.add('active');
+        registerForm.classList.remove('active');
+      }
+    }
+
+    function showDashboard(user){
+      kontoCurrentUser = user;
+      var authSection = document.getElementById('kontoAuthSection');
+      var dashSection = document.getElementById('kontoDashboardSection');
+      if(authSection) authSection.style.display = 'none';
+      if(dashSection) dashSection.style.display = '';
+      var emailEl = document.getElementById('kontoUserEmail');
+      if(emailEl) emailEl.textContent = user.email || '';
+      loadCars();
+      populateBrandOptions();
+      loadMyReservations();
+    }
+
+    async function kontoCheckSession(){
+      var sessionResult = await sb.auth.getSession();
+      var session = sessionResult.data.session;
+      if(session){
+        showDashboard(session.user);
+      } else {
+        showAuthPanel();
+      }
+    }
+    kontoCheckSession();
+
+    // ---------- Zakładki logowanie / rejestracja ----------
+    var kontoTabLogin = document.getElementById('kontoTabLogin');
+    var kontoTabRegister = document.getElementById('kontoTabRegister');
+    var kontoLoginFormEl = document.getElementById('clientLoginForm');
+    var kontoRegisterFormEl = document.getElementById('clientRegisterForm');
+    if(kontoTabLogin && kontoTabRegister){
+      kontoTabLogin.addEventListener('click', function(){
+        kontoTabLogin.classList.add('active');
+        kontoTabRegister.classList.remove('active');
+        kontoLoginFormEl.classList.add('active');
+        kontoRegisterFormEl.classList.remove('active');
+      });
+      kontoTabRegister.addEventListener('click', function(){
+        kontoTabRegister.classList.add('active');
+        kontoTabLogin.classList.remove('active');
+        kontoRegisterFormEl.classList.add('active');
+        kontoLoginFormEl.classList.remove('active');
+      });
+    }
+
+    // ---------- Rejestracja nowego klienta ----------
+    if(kontoRegisterFormEl){
+      kontoRegisterFormEl.addEventListener('submit', async function(e){
+        e.preventDefault();
+        var name = document.getElementById('registerName').value.trim();
+        var phone = document.getElementById('registerPhone').value.trim();
+        var email = document.getElementById('registerEmail').value.trim();
+        var password = document.getElementById('registerPassword').value;
+        var passwordConfirm = document.getElementById('registerPasswordConfirm').value;
+        var errEl = document.getElementById('registerError');
+        errEl.textContent = '';
+        errEl.className = 'auth-error';
+        if(password !== passwordConfirm){
+          errEl.textContent = 'Podane hasła nie są identyczne.';
+          return;
+        }
+        if(password.length < 6){
+          errEl.textContent = 'Hasło musi mieć co najmniej 6 znaków.';
+          return;
+        }
+        var result = await sb.auth.signUp({
+          email: email,
+          password: password,
+          options: { data: { full_name: name, phone: phone } }
+        });
+        if(result.error){
+          errEl.textContent = 'Nie udało się założyć konta: ' + result.error.message;
+          return;
+        }
+        if(result.data && result.data.session){
+          showDashboard(result.data.user);
+        } else {
+          errEl.className = 'auth-error auth-success';
+          errEl.textContent = 'Konto utworzone! Sprawdź swoją skrzynkę e-mail, aby potwierdzić rejestrację, a następnie zaloguj się.';
+          kontoRegisterFormEl.reset();
+        }
+      });
+    }
+
+    // ---------- Wylogowanie ----------
+    var kontoLogoutBtn = document.getElementById('kontoLogoutBtn');
+    if(kontoLogoutBtn){
+      kontoLogoutBtn.addEventListener('click', async function(){
+        await sb.auth.signOut();
+        kontoCart = [];
+        renderKontoCart();
+        showAuthPanel();
+      });
+    }
+
+    // ---------- Koszyk (rezerwacja aut) ----------
+    function renderKontoCart(){
+      var itemsEl = document.getElementById('kontoCartItems');
+      var reserveBtn = document.getElementById('kontoReserveBtn');
+      if(!itemsEl) return;
+      if(kontoCart.length === 0){
+        itemsEl.innerHTML = '<div class="konto-cart-empty">Koszyk jest pusty — dodaj auto z listy obok.</div>';
+        if(reserveBtn) reserveBtn.disabled = true;
+        return;
+      }
+      itemsEl.innerHTML = kontoCart.map(function(item){
+        var priceTxt = item.price ? new Intl.NumberFormat('pl-PL').format(item.price) + ' zł' : 'Cena na zapytanie';
+        return '' +
+          '<div class="konto-cart-item">' +
+            '<div><div class="name">' + item.brand + ' ' + item.model + '</div><div class="price">' + priceTxt + '</div></div>' +
+            '<button type="button" class="konto-cart-remove" data-remove-id="' + item.id + '">&times;</button>' +
+          '</div>';
+      }).join('');
+      if(reserveBtn) reserveBtn.disabled = false;
+      itemsEl.querySelectorAll('.konto-cart-remove').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          kontoCart = kontoCart.filter(function(c){ return c.id !== btn.getAttribute('data-remove-id'); });
+          renderKontoCart();
+          var addBtn = document.querySelector('.konto-add-cart-btn[data-car-id="' + btn.getAttribute('data-remove-id') + '"]');
+          if(addBtn){ addBtn.classList.remove('added'); addBtn.textContent = 'Dodaj do koszyka'; }
+        });
+      });
+    }
+    renderKontoCart();
+
+    document.addEventListener('click', function(e){
+      var btn = e.target.closest ? e.target.closest('.konto-add-cart-btn') : null;
+      if(!btn) return;
+      var id = btn.getAttribute('data-car-id');
+      if(kontoCart.some(function(c){ return c.id === id; })) return;
+      kontoCart.push({
+        id: id,
+        brand: btn.getAttribute('data-car-brand') || '',
+        model: btn.getAttribute('data-car-model') || '',
+        price: parseFloat(btn.getAttribute('data-car-price')) || null
+      });
+      btn.classList.add('added');
+      btn.textContent = 'Dodano ✓';
+      renderKontoCart();
+    });
+
+    // ---------- Rezerwacja online (-15%) ----------
+    var kontoReserveBtn = document.getElementById('kontoReserveBtn');
+    if(kontoReserveBtn){
+      kontoReserveBtn.addEventListener('click', async function(){
+        if(!kontoCurrentUser || kontoCart.length === 0) return;
+        var statusEl = document.getElementById('kontoCartStatus');
+        statusEl.textContent = '';
+        statusEl.className = 'konto-cart-status';
+        kontoReserveBtn.disabled = true;
+        kontoReserveBtn.textContent = 'Wysyłanie…';
+        try{
+          var rows = kontoCart.map(function(item){
+            return {
+              user_id: kontoCurrentUser.id,
+              car_id: item.id,
+              car_brand: item.brand,
+              car_model: item.model,
+              car_price: item.price,
+              discount_percent: 15,
+              status: 'nowa'
+            };
+          });
+          var result = await sb.from('reservations').insert(rows);
+          if(result.error) throw new Error(result.error.message);
+          statusEl.textContent = 'Rezerwacja przyjęta! Skontaktujemy się, aby potwierdzić szczegóły — pamiętaj o dodatkowym rabacie -15% na usługi AUTORYTET.';
+          statusEl.className = 'konto-cart-status success';
+          kontoCart = [];
+          document.querySelectorAll('.konto-add-cart-btn.added').forEach(function(btn){
+            btn.classList.remove('added');
+            btn.textContent = 'Dodaj do koszyka';
+          });
+          renderKontoCart();
+          loadMyReservations();
+        } catch(err){
+          statusEl.textContent = 'Nie udało się zapisać rezerwacji. Spróbuj ponownie.';
+          statusEl.className = 'konto-cart-status error';
+        } finally {
+          kontoReserveBtn.disabled = kontoCart.length === 0;
+          kontoReserveBtn.textContent = 'Zarezerwuj online (-15%)';
+        }
+      });
+    }
+
+    // ---------- Historia rezerwacji klienta ----------
+    async function loadMyReservations(){
+      var listEl = document.getElementById('kontoReservationsList');
+      if(!listEl || !kontoCurrentUser) return;
+      var result = await sb.from('reservations').select('*').eq('user_id', kontoCurrentUser.id).order('created_at', { ascending: false }).limit(20);
+      if(result.error || !result.data || result.data.length === 0){
+        listEl.innerHTML = '<div class="konto-reservations-empty">Brak wcześniejszych rezerwacji.</div>';
+        return;
+      }
+      listEl.innerHTML = result.data.map(function(r){
+        return '' +
+          '<div class="konto-reservation-row">' +
+            '<span>' + (r.car_brand || '') + ' ' + (r.car_model || '') + '</span>' +
+            '<span class="status">' + (r.status || 'nowa') + '</span>' +
+          '</div>';
+      }).join('');
+    }
   })();
 </script>
 </body>
