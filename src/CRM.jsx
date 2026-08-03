@@ -3853,6 +3853,7 @@ const ORG_SETTINGS_SECTIONS = [
   { key: "orgForms", label: "Formularze" },
   { key: "orgFiles", label: "Pliki" },
   { key: "orgPlugins", label: "Wtyczki" },
+  { key: "orgWebsiteContent", label: "Treści strony" },
 ];
 
 function SettingsPanel({
@@ -3962,6 +3963,7 @@ function SettingsPanel({
         )}
         {section === "orgFiles" && isAdmin && <FilesPlaceholderPanel />}
         {section === "orgPlugins" && isAdmin && <PluginsPlaceholderPanel />}
+        {section === "orgWebsiteContent" && isAdmin && <OrgWebsiteContentSettingsPanel />}
         {section === "team" && isAdmin && <TeamGoalsSettingsPanel user={user} goals={goals} onUpdateGoals={onUpdateGoals} />}
       </div>
     </div>
@@ -5546,6 +5548,185 @@ function PluginsPlaceholderPanel() {
         ofert — bezpośrednio w karcie szansy sprzedaży) wymagają osobnego frameworku integracyjnego (bezpieczne
         osadzanie zewnętrznych stron, autoryzacja per-wtyczka). Nie jest to jeszcze zbudowane w tym CRM.
       </div>
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Treści strony (centrum zmiany treści na stronie) ----------
+   Na razie: zarządzanie adresami e-mail podpiętymi pod przyciski/formularze na stronie
+   autorytet.com.pl (tabela Supabase button_email_settings — ta sama, którą wcześniej
+   obsługiwał samodzielny panel-maile.html). Zakładka "Treści strony" to miejsce pod
+   przyszłą rozbudowę o edycję pozostałych tekstów strony. ---------- */
+function OrgWebsiteContentSettingsPanel() {
+  const [subTab, setSubTab] = useState("emails");
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [drafts, setDrafts] = useState({});
+  const [rowStatus, setRowStatus] = useState({});
+  const [savingKey, setSavingKey] = useState(null);
+
+  const [newKey, setNewKey] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [newEmails, setNewEmails] = useState("");
+  const [addStatus, setAddStatus] = useState(null);
+  const [adding, setAdding] = useState(false);
+
+  const loadRows = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("button_email_settings")
+      .select("*")
+      .order("label", { ascending: true });
+    if (!error && data) {
+      setRows(data);
+      setDrafts((prev) => {
+        const next = { ...prev };
+        data.forEach((r) => {
+          if (next[r.key] === undefined) next[r.key] = r.emails;
+        });
+        return next;
+      });
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadRows(); }, [loadRows]);
+
+  const saveRow = async (key) => {
+    setSavingKey(key);
+    setRowStatus((prev) => ({ ...prev, [key]: null }));
+    const emails = (drafts[key] || "").split(",").map((e) => e.trim()).filter(Boolean).join(", ");
+    const { error } = await supabase
+      .from("button_email_settings")
+      .update({ emails, updated_at: new Date().toISOString() })
+      .eq("key", key);
+    if (error) {
+      setRowStatus((prev) => ({ ...prev, [key]: { type: "error", msg: "Nie udało się zapisać." } }));
+    } else {
+      setRows((prev) => prev.map((r) => (r.key === key ? { ...r, emails } : r)));
+      setDrafts((prev) => ({ ...prev, [key]: emails }));
+      setRowStatus((prev) => ({ ...prev, [key]: { type: "success", msg: "Zapisano." } }));
+    }
+    setSavingKey(null);
+  };
+
+  const addRow = async (e) => {
+    e.preventDefault();
+    setAddStatus(null);
+    const key = newKey.trim().replace(/\s+/g, "_");
+    const label = newLabel.trim();
+    const emails = newEmails.split(",").map((x) => x.trim()).filter(Boolean).join(", ");
+    if (!key || !label || !emails) return;
+    setAdding(true);
+    const { error } = await supabase.from("button_email_settings").insert({ key, label, emails });
+    setAdding(false);
+    if (error) {
+      setAddStatus({ type: "error", msg: "Nie udało się dodać — sprawdź, czy taki klucz już nie istnieje." });
+    } else {
+      setAddStatus({ type: "success", msg: "Dodano nowy przycisk." });
+      setNewKey(""); setNewLabel(""); setNewEmails("");
+      loadRows();
+    }
+  };
+
+  return (
+    <div style={S.stack}>
+      <SubTabs
+        tabs={[{ key: "emails", label: "Adresy e-mail" }, { key: "content", label: "Treści strony" }]}
+        active={subTab}
+        onChange={setSubTab}
+      />
+
+      {subTab === "emails" && (
+        <div style={S.stack}>
+          <div style={S.card}>
+            <div style={S.cardTitle}>E-maile podpięte pod przyciski na stronie</div>
+            <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+              Tu zmieniasz, na jaki adres (lub adresy — oddzielone przecinkiem) trafia wiadomość z danego
+              formularza lub przycisku na stronie autorytet.com.pl, bez edycji kodu.
+            </div>
+            {loading ? (
+              <div style={{ fontSize: 13, color: "#9A9A9A" }}>Wczytywanie…</div>
+            ) : rows.length === 0 ? (
+              <EmptyNote text='Brak jeszcze żadnych zdefiniowanych przycisków. Sprawdź, czy migracja "migration_button_emails.sql" została uruchomiona w Supabase, albo dodaj pierwszy poniżej.' />
+            ) : (
+              <div>
+                <div style={S.tableHeader}>
+                  <span style={{ flex: 2 }}>Przycisk / formularz</span>
+                  <span style={{ flex: 2 }}>Adresy e-mail</span>
+                  <span style={{ flex: 1 }} />
+                </div>
+                {rows.map((r) => (
+                  <div key={r.key} style={S.tableRow}>
+                    <span style={{ flex: 2, textAlign: "left" }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5 }}>{r.label}</div>
+                      <div style={{ fontSize: 11, color: "#9A9A9A", fontFamily: "monospace" }}>{r.key}</div>
+                    </span>
+                    <span style={{ flex: 2, textAlign: "left" }}>
+                      <input
+                        type="text"
+                        value={drafts[r.key] ?? r.emails}
+                        onChange={(e) => setDrafts((prev) => ({ ...prev, [r.key]: e.target.value }))}
+                        style={S.input}
+                      />
+                    </span>
+                    <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end" }}>
+                      <button type="button" onClick={() => saveRow(r.key)} disabled={savingKey === r.key} style={S.secondaryBtn}>
+                        Zapisz
+                      </button>
+                      {rowStatus[r.key] && (
+                        <span style={{ fontSize: 11.5, color: rowStatus[r.key].type === "success" ? "#1a7a1a" : "#E4241B", whiteSpace: "nowrap" }}>
+                          {rowStatus[r.key].msg}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={S.card}>
+            <div style={S.cardTitle}>Dodaj nowy przycisk / formularz</div>
+            <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+              Jeśli na stronie pojawi się nowy przycisk lub formularz wysyłający e-mail, dodaj go tutaj — pod
+              podanym kluczem (bez spacji i polskich znaków) będzie mógł być odpytywany przez kod strony.
+            </div>
+            <form onSubmit={addRow} style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr 1.4fr auto", gap: 12, alignItems: "end" }}>
+              <div>
+                <div style={{ ...S.label, marginBottom: 6 }}>Klucz</div>
+                <input type="text" required value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="nowy_formularz" style={S.input} />
+              </div>
+              <div>
+                <div style={{ ...S.label, marginBottom: 6 }}>Nazwa</div>
+                <input type="text" required value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="np. Formularz X — strona Y" style={S.input} />
+              </div>
+              <div>
+                <div style={{ ...S.label, marginBottom: 6 }}>Adresy e-mail</div>
+                <input type="text" required value={newEmails} onChange={(e) => setNewEmails(e.target.value)} placeholder="jeden@autorytet.com.pl, drugi@autorytet.com.pl" style={S.input} />
+              </div>
+              <button type="submit" disabled={adding} style={S.primaryBtn}><Plus size={14} /> Dodaj</button>
+            </form>
+            {addStatus && (
+              <div style={{ marginTop: 12, fontSize: 13, color: addStatus.type === "success" ? "#1a7a1a" : "#E4241B" }}>
+                {addStatus.msg}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {subTab === "content" && (
+        <div style={S.card}>
+          <div style={S.cardTitle}>Treści strony</div>
+          <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginTop: 12, lineHeight: 1.5 }}>
+            Docelowo w tym miejscu ma powstać centrum edycji tekstów i treści na stronie autorytet.com.pl (np.
+            opisy usług, teksty na stronach głównych zakładek) bez konieczności edycji kodu. Na razie zbudowana
+            jest tu wyłącznie część odpowiedzialna za adresy e-mail powyżej — edycja pozostałych treści strony
+            pojawi się w kolejnej aktualizacji.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
