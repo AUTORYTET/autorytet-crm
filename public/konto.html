@@ -716,7 +716,7 @@
   <div class="wrap">
     <span class="konto-hero-eyebrow">Panel klienta</span>
     <h1>Twoje konto AUTORYTET</h1>
-    <p>Zaloguj się lub załóż konto, żeby przeglądać ofertę, odkładać auta do koszyka i rezerwować je online — z dodatkowym rabatem -15% na usługi AUTORYTET.</p>
+    <p>Zaloguj się lub załóż konto, żeby przeglądać ofertę, odkładać auta do koszyka i rezerwować je online — z dodatkowym rabatem -10% na usługi AUTORYTET.</p>
   </div>
 </section>
 
@@ -772,8 +772,8 @@
       </div>
 
       <div class="konto-promo-banner">
-        <span class="badge">-15%</span>
-        <p>Zarezerwuj auto online przez koszyk poniżej, a otrzymasz dodatkowy rabat -15% na usługi AUTORYTET (finansowanie, ubezpieczenie, przygotowanie auta).</p>
+        <span class="badge">-10%</span>
+        <p>Zarezerwuj auto online przez koszyk poniżej, a otrzymasz dodatkowy rabat -10% na usługi AUTORYTET.</p>
       </div>
 
       <div class="konto-layout">
@@ -818,7 +818,7 @@
           <div id="kontoCartItems">
             <div class="konto-cart-empty">Koszyk jest pusty — dodaj auto z listy obok.</div>
           </div>
-          <button type="button" class="konto-cart-reserve-btn" id="kontoReserveBtn" disabled>Zarezerwuj online (-15%)</button>
+          <button type="button" class="konto-cart-reserve-btn" id="kontoReserveBtn" disabled>Zarezerwuj online (-10%)</button>
           <div class="konto-cart-status" id="kontoCartStatus"></div>
 
           <div class="konto-reservations">
@@ -1244,7 +1244,31 @@
       renderKontoCart();
     });
 
-    // ---------- Rezerwacja online (-15%) ----------
+    // ---------- Powiadomienie e-mail o nowej rezerwacji (do zespołu AUTORYTET) ----------
+    function sendReservationEmailNotification(rows){
+      var recipients = ['cezary.kozlowski@autorytet.com.pl', 'uruszula.kaczmarek@autorytet.com.pl', 'ewelina.kozlowska@autorytet.com.pl'];
+      var carsList = rows.map(function(r){
+        var priceTxt = r.car_price ? new Intl.NumberFormat('pl-PL').format(r.car_price) + ' zł' : 'cena na zapytanie';
+        return r.car_brand + ' ' + r.car_model + ' (' + priceTxt + ')';
+      }).join(', ');
+      var clientEmailTxt = (kontoCurrentUser && kontoCurrentUser.email) ? kontoCurrentUser.email : '—';
+      return Promise.allSettled(recipients.map(function(email){
+        var formData = new FormData();
+        formData.append('_subject', 'Nowa rezerwacja online — autorytet.com.pl');
+        formData.append('_captcha', 'false');
+        formData.append('_template', 'table');
+        formData.append('Klient (e-mail)', clientEmailTxt);
+        formData.append('Zarezerwowane auta', carsList);
+        formData.append('Rabat', '-10% na usługi AUTORYTET');
+        return fetch('https://formsubmit.co/ajax/' + encodeURIComponent(email), {
+          method: 'POST',
+          headers: { 'Accept': 'application/json' },
+          body: formData
+        });
+      })).catch(function(){ /* powiadomienie e-mail jest pomocnicze — brak jego wysyłki nie blokuje rezerwacji */ });
+    }
+
+    // ---------- Rezerwacja online (-10%) ----------
     var kontoReserveBtn = document.getElementById('kontoReserveBtn');
     if(kontoReserveBtn){
       kontoReserveBtn.addEventListener('click', async function(){
@@ -1262,13 +1286,14 @@
               car_brand: item.brand,
               car_model: item.model,
               car_price: item.price,
-              discount_percent: 15,
+              discount_percent: 10,
               status: 'nowa'
             };
           });
           var result = await sb.from('reservations').insert(rows);
           if(result.error) throw new Error(result.error.message);
-          statusEl.textContent = 'Rezerwacja przyjęta! Skontaktujemy się, aby potwierdzić szczegóły — pamiętaj o dodatkowym rabacie -15% na usługi AUTORYTET.';
+          sendReservationEmailNotification(rows);
+          statusEl.textContent = 'Rezerwacja online przyjęta! Skontaktujemy się z Tobą jak najszybciej, by potwierdzić dostępność pojazdu. Pamiętaj o dodatkowym rabacie -10% na usługi* AUTORYTET.';
           statusEl.className = 'konto-cart-status success';
           kontoCart = [];
           document.querySelectorAll('.konto-add-cart-btn.added').forEach(function(btn){
@@ -1282,7 +1307,7 @@
           statusEl.className = 'konto-cart-status error';
         } finally {
           kontoReserveBtn.disabled = kontoCart.length === 0;
-          kontoReserveBtn.textContent = 'Zarezerwuj online (-15%)';
+          kontoReserveBtn.textContent = 'Zarezerwuj online (-10%)';
         }
       });
     }
