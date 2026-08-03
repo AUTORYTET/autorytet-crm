@@ -3698,13 +3698,27 @@ function VehicleFormModal({ initial, onClose, onSave }) {
   const [importError, setImportError] = useState(null);
   const [importWarnings, setImportWarnings] = useState([]);
 
-  const importFromOtomoto = async () => {
+  // Wybiera właściwy endpoint importu na podstawie domeny wklejonego linku.
+  // OTOMOTO -> istniejący /api/otomoto-import (bez zmian). audi.pl -> nowy
+  // /api/audi-import (dane oficjalne + zdjęcia z automatycznie wyszarzonym
+  // tłem). Obie odpowiedzi mają identyczny kształt, więc reszta funkcji
+  // (mapowanie na formularz) jest wspólna dla obu źródeł.
+  const importFromListing = async () => {
     if (!importUrl.trim()) return;
     setImporting(true);
     setImportError(null);
     setImportWarnings([]);
     try {
-      const r = await fetch("/api/otomoto-import?url=" + encodeURIComponent(importUrl.trim()));
+      const trimmedUrl = importUrl.trim();
+      let host = "";
+      try {
+        host = new URL(trimmedUrl).hostname.toLowerCase();
+      } catch (e) {
+        setImportError("Podany link nie wygląda na prawidłowy adres URL.");
+        return;
+      }
+      const endpoint = host.endsWith("audi.pl") ? "/api/audi-import" : "/api/otomoto-import";
+      const r = await fetch(endpoint + "?url=" + encodeURIComponent(trimmedUrl));
       const data = await r.json();
       if (!r.ok) {
         setImportError(data.error || "Nie udało się pobrać danych.");
@@ -3716,6 +3730,7 @@ function VehicleFormModal({ initial, onClose, onSave }) {
         model: data.model || f.model,
         year: data.year || f.year,
         price: data.price || f.price,
+        monthlyPayment: data.monthlyPayment || f.monthlyPayment,
         bodyType: data.bodyType || f.bodyType,
         description: data.description || f.description,
         imageUrl: (data.images && data.images[0]) || f.imageUrl,
@@ -3741,22 +3756,25 @@ function VehicleFormModal({ initial, onClose, onSave }) {
         </div>
 
         <div style={{ background: "#F3F3F1", borderRadius: 8, padding: 12, marginBottom: 16 }}>
-          <div style={{ ...S.label, marginBottom: 6 }}>Wklej link do ogłoszenia OtoMoto</div>
+          <div style={{ ...S.label, marginBottom: 6 }}>Wklej link do ogłoszenia (OTOMOTO lub audi.pl)</div>
           <div style={{ display: "flex", gap: 8 }}>
             <input
               value={importUrl}
               onChange={(e) => setImportUrl(e.target.value)}
-              placeholder="https://www.otomoto.pl/oferta/..."
+              placeholder="https://www.otomoto.pl/oferta/... lub https://www.audi.pl/pl/wyszukiwarka-samochodow-nowych/..."
               style={{ ...S.input, flex: 1 }}
             />
             <button
               type="button"
-              onClick={importFromOtomoto}
+              onClick={importFromListing}
               disabled={importing || !importUrl.trim()}
               style={{ ...S.primaryBtn, whiteSpace: "nowrap", opacity: importing ? 0.6 : 1 }}
             >
               {importing ? "Pobieranie…" : "Pobierz dane"}
             </button>
+          </div>
+          <div style={{ fontSize: 11.5, color: "#9A9A9A", marginTop: 6 }}>
+            Dla linków z audi.pl zdjęcia są automatycznie wgrywane z wyszarzonym tłem (dopasowanym do koloru strony).
           </div>
           {importError && (
             <div style={{ color: "#E4241B", fontSize: 12.5, marginTop: 8 }}>{importError}</div>
