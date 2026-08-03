@@ -894,7 +894,7 @@
     var SUPABASE_URL = "https://csgqmofkjjfmsbknnxqc.supabase.co";
     var SUPABASE_KEY = "sb_publishable_egdRjqCBEHiYiMxHKHhWwg_8f96sa1O";
     var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    // ---------- Adresy e-mail przypisane do przycisków (edytowalne w panelu admina, panel-maile.html) ----------
+    // ---------- Adresy e-mail przypisane do przycisków (edytowalne w CRM: Ustawienia -> Treści strony) ----------
     async function getButtonEmails(key, fallbackEmails){
       try{
         var result = await sb.from('button_email_settings').select('emails').eq('key', key).single();
