@@ -1141,6 +1141,17 @@
     var SUPABASE_URL = "https://csgqmofkjjfmsbknnxqc.supabase.co";
     var SUPABASE_KEY = "sb_publishable_egdRjqCBEHiYiMxHKHhWwg_8f96sa1O";
     var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // ---------- Adresy e-mail przypisane do przycisków (edytowalne w panelu admina, panel-maile.html) ----------
+    async function getButtonEmails(key, fallbackEmails){
+      try{
+        var result = await sb.from('button_email_settings').select('emails').eq('key', key).single();
+        if(!result.error && result.data && result.data.emails){
+          var list = result.data.emails.split(',').map(function(e){ return e.trim(); }).filter(Boolean);
+          if(list.length) return list;
+        }
+      } catch(e){}
+      return fallbackEmails;
+    }
     function openModal(id){
       document.getElementById(id).classList.add('open');
     }
@@ -1360,7 +1371,7 @@
         statusEl.className = 'ubez-form-status';
         submitBtn.disabled = true;
         submitBtn.textContent = 'Wysyłanie…';
-        var recipients = ['biuro@autorytet.com.pl', 'ewelina.kozlowska@autorytet.com.pl'];
+        var recipients = await getButtonEmails('finansowanie_formularz', ['biuro@autorytet.com.pl', 'ewelina.kozlowska@autorytet.com.pl']);
         try{
           var results = await Promise.allSettled(recipients.map(function(email){
             var formData = new FormData(ubezForm);

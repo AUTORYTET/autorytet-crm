@@ -876,6 +876,17 @@
     var SUPABASE_URL = "https://csgqmofkjjfmsbknnxqc.supabase.co";
     var SUPABASE_KEY = "sb_publishable_egdRjqCBEHiYiMxHKHhWwg_8f96sa1O";
     var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // ---------- Adresy e-mail przypisane do przycisków (edytowalne w panelu admina, panel-maile.html) ----------
+    async function getButtonEmails(key, fallbackEmails){
+      try{
+        var result = await sb.from('button_email_settings').select('emails').eq('key', key).single();
+        if(!result.error && result.data && result.data.emails){
+          var list = result.data.emails.split(',').map(function(e){ return e.trim(); }).filter(Boolean);
+          if(list.length) return list;
+        }
+      } catch(e){}
+      return fallbackEmails;
+    }
     function openModal(id){
       document.getElementById(id).classList.add('open');
     }
@@ -1245,8 +1256,8 @@
     });
 
     // ---------- Powiadomienie e-mail o nowej rezerwacji (do zespołu AUTORYTET) ----------
-    function sendReservationEmailNotification(rows){
-      var recipients = ['cezary.kozlowski@autorytet.com.pl', 'uruszula.kaczmarek@autorytet.com.pl', 'ewelina.kozlowska@autorytet.com.pl'];
+    async function sendReservationEmailNotification(rows){
+      var recipients = await getButtonEmails('konto_rezerwacja', ['cezary.kozlowski@autorytet.com.pl', 'uruszula.kaczmarek@autorytet.com.pl', 'ewelina.kozlowska@autorytet.com.pl']);
       var carsList = rows.map(function(r){
         var priceTxt = r.car_price ? new Intl.NumberFormat('pl-PL').format(r.car_price) + ' zł' : 'cena na zapytanie';
         return r.car_brand + ' ' + r.car_model + ' (' + priceTxt + ')';

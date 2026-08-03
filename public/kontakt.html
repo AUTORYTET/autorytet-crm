@@ -894,6 +894,17 @@
     var SUPABASE_URL = "https://csgqmofkjjfmsbknnxqc.supabase.co";
     var SUPABASE_KEY = "sb_publishable_egdRjqCBEHiYiMxHKHhWwg_8f96sa1O";
     var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // ---------- Adresy e-mail przypisane do przycisków (edytowalne w panelu admina, panel-maile.html) ----------
+    async function getButtonEmails(key, fallbackEmails){
+      try{
+        var result = await sb.from('button_email_settings').select('emails').eq('key', key).single();
+        if(!result.error && result.data && result.data.emails){
+          var list = result.data.emails.split(',').map(function(e){ return e.trim(); }).filter(Boolean);
+          if(list.length) return list;
+        }
+      } catch(e){}
+      return fallbackEmails;
+    }
     function openModal(id){
       document.getElementById(id).classList.add('open');
     }
@@ -1101,13 +1112,17 @@
         submitBtn.disabled = true;
         submitBtn.textContent = 'Wysyłanie…';
         try{
-          var formData = new FormData(kontaktForm);
-          var response = await fetch('https://formsubmit.co/ajax/biuro@autorytet.com.pl', {
-            method: 'POST',
-            headers: { 'Accept': 'application/json' },
-            body: formData
-          });
-          if(!response.ok) throw new Error('Blad wysylki formularza');
+          var recipients = await getButtonEmails('kontakt_formularz', ['biuro@autorytet.com.pl']);
+          var results = await Promise.allSettled(recipients.map(function(email){
+            var formData = new FormData(kontaktForm);
+            return fetch('https://formsubmit.co/ajax/' + encodeURIComponent(email), {
+              method: 'POST',
+              headers: { 'Accept': 'application/json' },
+              body: formData
+            }).then(function(r){ if(!r.ok) throw new Error('blad'); return r; });
+          }));
+          var anyOk = results.some(function(r){ return r.status === 'fulfilled'; });
+          if(!anyOk) throw new Error('Blad wysylki formularza');
           statusEl.textContent = 'Dziękujemy! Wiadomość została wysłana — odpowiemy najszybciej jak to możliwe.';
           statusEl.className = 'kontakt-form-status success';
           kontaktForm.reset();
