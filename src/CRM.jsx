@@ -612,6 +612,11 @@ function customFieldDefFromDb(row) {
   };
 }
 
+// UWAGA: tabela "cars" to ta sama tabela, z której korzysta publiczna strona
+// autorytet.com.pl (sprzedaz.html/auto.html) - dlatego CRM MUSI używać
+// dokładnie tych samych nazw kolumn co strona (photos, listing_url), a nie
+// wymyślać nowych (image_urls, source_url) - inaczej zdjęcia/link dodane w
+// CRM nie pokazałyby się na stronie, i odwrotnie. Zobacz migration_car_details.sql.
 function vehicleFromDb(row) {
   return {
     id: row.id,
@@ -624,8 +629,8 @@ function vehicleFromDb(row) {
     description: row.description || "",
     status: row.status || "dostepny",
     imageUrl: row.image_url || "",
-    imageUrls: Array.isArray(row.image_urls) ? row.image_urls : [],
-    sourceUrl: row.source_url || "",
+    imageUrls: Array.isArray(row.photos) ? row.photos : [],
+    sourceUrl: row.listing_url || "",
     createdAt: row.created_at,
   };
 }
@@ -640,8 +645,8 @@ function vehicleToDb(v) {
     description: v.description,
     status: v.status || "dostepny",
     image_url: v.imageUrl || null,
-    image_urls: v.imageUrls && v.imageUrls.length ? v.imageUrls : null,
-    source_url: v.sourceUrl || null,
+    photos: v.imageUrls && v.imageUrls.length ? v.imageUrls : null,
+    listing_url: v.sourceUrl || null,
   };
 }
 

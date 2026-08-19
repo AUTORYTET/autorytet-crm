@@ -1,11 +1,13 @@
 import React, { useState } from "react";
 import { supabase } from "./supabaseClient.js";
-import logo from "./assets/logo.png";
 
 function Logo() {
   return (
-    <div style={{ display: "flex", justifyContent: "center" }}>
-      <img src={logo} alt="Autorytet" style={{ height: 56, display: "block" }} />
+    <div style={{ display: "flex", fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 30, letterSpacing: 0.5, lineHeight: 1, justifyContent: "center" }}>
+      <span style={{ color: "#111111" }}>AUTO</span>
+      <span style={{ background: "#E4241B", color: "#fff", padding: "2px 8px", marginLeft: 2, transform: "skewX(-8deg)", display: "inline-block" }}>
+        <span style={{ display: "inline-block", transform: "skewX(8deg)" }}>RYTET</span>
+      </span>
     </div>
   );
 }
