@@ -157,9 +157,11 @@ function extractLabelValuePairs(texts) {
   return found;
 }
 
-function extractModelFromTitle($) {
-  let title = ($("title").first().text() || "").trim();
-  if (!title) title = ($('meta[property="og:title"]').attr("content") || "").trim();
+// Wyciąga nazwę modelu z tytułu strony. Rozdzielone na dwie funkcje, bo
+// tytuł może pochodzić albo z pobranej przez nas strony (cheerio), albo
+// zostać przysłany przez przeglądarkę z ZAPISANEJ strony (tryb "Ctrl+S").
+function modelFromTitle(rawTitle) {
+  let title = (rawTitle || "").trim();
   if (!title) return null;
   title = title.split("|")[0].trim();
   title = title.replace(/^Audi\s+/i, "").trim();
@@ -174,14 +176,18 @@ function extractBodyType(fullText, bodyTypeRaw) {
   return null;
 }
 
-function extractImageUrls(html) {
-  const matches = html.match(/https:\/\/mediaservice\.audi\.com\/media\/[^"'\s)\\]+/g) || [];
+// Porządkuje listę adresów zdjęć: usuwa duplikaty i ujednolica szerokość
+// renderowanego obrazu. Używane w obu trybach (pobieranie strony przez nas
+// oraz zapisana strona przysłana z przeglądarki).
+function normalizeImageUrls(rawUrls) {
   const seen = new Set();
   const urls = [];
-  for (const raw of matches) {
-    // ujednolicamy szerokość renderowanego obrazu, jeśli parametr już jest w URL-u
-    const clean = raw.replace(/&amp;/g, "&");
-    const withWidth = /[?&]wid=/.test(clean) ? clean.replace(/([?&])wid=\d+/, "$1wid=1600") : clean + (clean.includes("?") ? "&" : "?") + "wid=1600";
+  for (const raw of rawUrls) {
+    if (!raw || !/^https:\/\/mediaservice\.audi\.com\//i.test(raw)) continue;
+    const clean = String(raw).replace(/&amp;/g, "&");
+    const withWidth = /[?&]wid=/.test(clean)
+      ? clean.replace(/([?&])wid=\d+/, "$1wid=1600")
+      : clean + (clean.includes("?") ? "&" : "?") + "wid=1600";
     if (!seen.has(withWidth)) {
       seen.add(withWidth);
       urls.push(withWidth);
@@ -189,6 +195,10 @@ function extractImageUrls(html) {
     if (urls.length >= MAX_IMAGES) break;
   }
   return urls;
+}
+
+function extractImageUrls(html) {
+  return normalizeImageUrls(html.match(/https:\/\/mediaservice\.audi\.com\/media\/[^"'\s)\\]+/g) || []);
 }
 
 function buildDescription(fields) {
@@ -286,7 +296,13 @@ async function downloadAndProcessImage(url) {
     },
     redirect: "follow",
   });
-  if (!res.ok) throw new Error("Nie udało się pobrać zdjęcia: HTTP " + res.status);
+  if (!res.ok) {
+    const e = new Error("Nie udało się pobrać zdjęcia: HTTP " + res.status);
+    // Oznaczamy blokadę antybotową osobno, żeby wyżej pokazać JEDNO
+    // zbiorcze, zrozumiałe ostrzeżenie zamiast dziesięciu takich samych.
+    if (BLOCKED_STATUSES.includes(res.status)) e.blockedImage = true;
+    throw e;
+  }
   const arrayBuffer = await res.arrayBuffer();
   return grayOutBackground(Buffer.from(arrayBuffer));
 }
@@ -302,14 +318,65 @@ async function uploadProcessedImage(supabase, buffer, index) {
   return data.publicUrl;
 }
 
-export default async function handler(req, res) {
-  const url = req.query && req.query.url;
-  const debug = req.query && (req.query.debug === "1" || req.query.debug === "true");
+// Wspólny "silnik" dla obu trybów: dostaje gotową listę fragmentów tekstu ze
+// strony + listę adresów zdjęć, i zwraca komplet danych do formularza w CRM
+// (po pobraniu zdjęć, wyszarzeniu tła i wgraniu ich do Supabase Storage).
+async function buildImportResult({ texts, imageUrls, title, sourceUrl, debug }) {
+  const warnings = [];
+  const fields = extractLabelValuePairs(texts);
+  const fullText = texts.join(" ");
+  const model = modelFromTitle(title);
+  const bodyType = extractBodyType(fullText, fields.bodyTypeRaw);
 
-  if (!url || !/^https?:\/\/(www\.)?audi\.pl\//i.test(url)) {
-    res.status(400).json({ error: "Podaj prawidłowy link do oferty na audi.pl." });
-    return;
+  if (debug) {
+    return { debug: true, model, bodyType, fields, imageUrlsFound: imageUrls, leafTextsSample: texts.slice(0, 400) };
   }
+
+  if (!model) warnings.push("Nie udało się rozpoznać modelu z tytułu strony - uzupełnij ręcznie.");
+  const price = fields.priceSpecial || fields.priceCatalog || fields.priceGeneric || null;
+  if (!price) warnings.push("Nie udało się rozpoznać ceny - uzupełnij ręcznie.");
+  if (!fields.year) warnings.push("Nie udało się rozpoznać roku produkcji - uzupełnij ręcznie.");
+  if (!bodyType) warnings.push("Nie udało się rozpoznać typu nadwozia - wybierz ręcznie z listy.");
+  if (imageUrls.length === 0) warnings.push("Nie znaleziono zdjęć na tej stronie.");
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const processedImages = [];
+  let blockedImageCount = 0;
+  for (let i = 0; i < imageUrls.length; i++) {
+    try {
+      const { buffer, processed, note } = await downloadAndProcessImage(imageUrls[i]);
+      if (!processed && note) warnings.push(`Zdjęcie ${i + 1}: ${note}`);
+      const publicUrl = await uploadProcessedImage(supabase, buffer, i);
+      processedImages.push(publicUrl);
+    } catch (e) {
+      if (e && e.blockedImage) blockedImageCount++;
+      else warnings.push(`Zdjęcie ${i + 1}: nie udało się przetworzyć/wgrać (${e.message}).`);
+    }
+  }
+  // Jeśli serwer zdjęć blokuje nas hurtowo, nie zasypujemy użytkownika
+  // dziesięcioma identycznymi ostrzeżeniami - dajemy jedno, zrozumiałe.
+  if (blockedImageCount > 0) {
+    warnings.push(
+      `Serwer zdjęć Audi odrzucił pobranie ${blockedImageCount} zdjęć (blokada automatycznego pobierania). ` +
+        `Dane oferty zaimportowały się poprawnie - zdjęcia dodaj ręcznie albo daj znać, dorobię pobieranie zdjęć wprost z zapisanej strony.`
+    );
+  }
+
+  return {
+    brand: "Audi",
+    model,
+    year: fields.year || null,
+    price,
+    monthlyPayment: fields.monthlyPayment || null,
+    bodyType,
+    description: buildDescription(fields),
+    images: processedImages,
+    sourceUrl: sourceUrl || null,
+    warnings,
+  };
+}
+
+export default async function handler(req, res) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     res.status(500).json({
       error:
@@ -318,62 +385,60 @@ export default async function handler(req, res) {
     return;
   }
 
-  const warnings = [];
+  // ---- TRYB 2: zapisana strona (Ctrl+S) przysłana z przeglądarki ----------
+  // Przeglądarka użytkownika sama otwiera plik, wyciąga z niego fragmenty
+  // tekstu i adresy zdjęć, i przysyła tu gotową, malutką paczkę danych.
+  // Dzięki temu NIE pobieramy niczego z audi.pl z serwera, więc blokada
+  // antybotowa (HTTP 503) w ogóle nie wchodzi w grę.
+  if (req.method === "POST") {
+    try {
+      const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+      const texts = Array.isArray(body.texts) ? body.texts.map(String) : [];
+      const imageUrls = normalizeImageUrls(Array.isArray(body.imageUrls) ? body.imageUrls : []);
+
+      if (texts.length === 0) {
+        res.status(400).json({
+          error:
+            "Wybrany plik nie wygląda na zapisaną stronę oferty (nie znaleziono w nim żadnego tekstu). " +
+            "Upewnij się, że zapisałeś stronę oferty przez Ctrl+S i wybrałeś plik .html.",
+        });
+        return;
+      }
+
+      const result = await buildImportResult({
+        texts,
+        imageUrls,
+        title: body.title,
+        sourceUrl: body.sourceUrl,
+        debug: false,
+      });
+      res.status(200).json(result);
+    } catch (e) {
+      res.status(500).json({ error: "Nie udało się przetworzyć zapisanej strony: " + e.message });
+    }
+    return;
+  }
+
+  // ---- TRYB 1: pobranie strony po linku (jak dotąd) -----------------------
+  const url = req.query && req.query.url;
+  const debug = req.query && (req.query.debug === "1" || req.query.debug === "true");
+
+  if (!url || !/^https?:\/\/(www\.)?audi\.pl\//i.test(url)) {
+    res.status(400).json({ error: "Podaj prawidłowy link do oferty na audi.pl." });
+    return;
+  }
 
   try {
     const html = await fetchListingHtml(url);
     const $ = cheerio.load(html);
-    const texts = extractLeafTexts($);
-    const fields = extractLabelValuePairs(texts);
-    const fullText = texts.join(" ");
-    const model = extractModelFromTitle($);
-    const bodyType = extractBodyType(fullText, fields.bodyTypeRaw);
-    const imageUrls = extractImageUrls(html);
-
-    if (debug) {
-      res.status(200).json({
-        debug: true,
-        model,
-        bodyType,
-        fields,
-        imageUrlsFound: imageUrls,
-        leafTextsSample: texts.slice(0, 400),
-      });
-      return;
-    }
-
-    if (!model) warnings.push("Nie udało się rozpoznać modelu z tytułu strony - uzupełnij ręcznie.");
-    const price = fields.priceSpecial || fields.priceCatalog || fields.priceGeneric || null;
-    if (!price) warnings.push("Nie udało się rozpoznać ceny - uzupełnij ręcznie.");
-    if (!fields.year) warnings.push("Nie udało się rozpoznać roku produkcji - uzupełnij ręcznie.");
-    if (!bodyType) warnings.push("Nie udało się rozpoznać typu nadwozia - wybierz ręcznie z listy.");
-    if (imageUrls.length === 0) warnings.push("Nie znaleziono zdjęć na tej stronie.");
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const processedImages = [];
-    for (let i = 0; i < imageUrls.length; i++) {
-      try {
-        const { buffer, processed, note } = await downloadAndProcessImage(imageUrls[i]);
-        if (!processed && note) warnings.push(`Zdjęcie ${i + 1}: ${note}`);
-        const publicUrl = await uploadProcessedImage(supabase, buffer, i);
-        processedImages.push(publicUrl);
-      } catch (e) {
-        warnings.push(`Zdjęcie ${i + 1}: nie udało się przetworzyć/wgrać (${e.message}).`);
-      }
-    }
-
-    res.status(200).json({
-      brand: "Audi",
-      model,
-      year: fields.year || null,
-      price,
-      monthlyPayment: fields.monthlyPayment || null,
-      bodyType,
-      description: buildDescription(fields),
-      images: processedImages,
+    const result = await buildImportResult({
+      texts: extractLeafTexts($),
+      imageUrls: extractImageUrls(html),
+      title: ($("title").first().text() || $('meta[property="og:title"]').attr("content") || "").trim(),
       sourceUrl: url,
-      warnings,
+      debug,
     });
+    res.status(200).json(result);
   } catch (e) {
     // Blokada antybotowa to nie "błąd serwera" — pokazujemy wtedy zwykły,
     // zrozumiały komunikat zamiast surowego "HTTP 503".
