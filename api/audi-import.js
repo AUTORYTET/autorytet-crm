@@ -204,20 +204,88 @@ function buildDescription(fields) {
   return lines.join("\n");
 }
 
+// Pełny zestaw nagłówków, jakie wysyła prawdziwa przeglądarka Chrome przy
+// zwykłym wejściu na stronę. To NIE jest obchodzenie zabezpieczeń — pobieramy
+// tę samą, publicznie dostępną stronę, którą każdy może otworzyć w
+// przeglądarce. Chodzi o to, że nasze poprzednie zapytanie wysyłało tylko
+// "User-Agent", bez nagłówka "Accept" itd., co dla filtra antybotowego
+// audi.pl wyglądało podejrzanie i kończyło się odpowiedzią HTTP 503.
+//
+// UWAGA: celowo NIE ustawiamy tu "Accept-Encoding" — gdybyśmy to zrobili,
+// wbudowany fetch w Node przestałby automatycznie rozpakowywać odpowiedź i
+// dostalibyśmy skompresowane śmieci zamiast HTML-a.
+const BROWSER_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+  "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+  "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+  "Sec-Ch-Ua-Mobile": "?0",
+  "Sec-Ch-Ua-Platform": '"Windows"',
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
+};
+
+// Kody, którymi zabezpieczenia antybotowe zwykle odrzucają zapytania z serwera.
+const BLOCKED_STATUSES = [403, 429, 503];
+
+function blockedError(status, url) {
+  const e = new Error(
+    "Strona audi.pl odrzuciła zapytanie wysłane z serwera (kod " +
+      status +
+      "). Dane tej oferty są publiczne i normalnie otwierają się w przeglądarce, " +
+      "ale audi.pl blokuje automatyczne pobieranie z serwerów. Uzupełnij pola " +
+      "poniżej ręcznie albo daj znać — przygotuję inny sposób importu."
+  );
+  e.blocked = true;
+  e.status = status;
+  e.url = url;
+  return e;
+}
+
 async function fetchListingHtml(url) {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept-Language": "pl-PL,pl;q=0.9",
-    },
-  });
-  if (!res.ok) throw new Error("HTTP " + res.status + " dla " + url);
-  return await res.text();
+  let lastStatus = null;
+
+  // Dwie próby: filtry antybotowe czasem przepuszczają dopiero kolejne
+  // zapytanie (pierwsze bywa "wyzwaniem" zwracanym automatycznie).
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
+
+    const res = await fetch(url, { headers: BROWSER_HEADERS, redirect: "follow" });
+    if (res.ok) return await res.text();
+
+    lastStatus = res.status;
+    if (!BLOCKED_STATUSES.includes(res.status)) break; // zwykły błąd (np. 404) — nie ma po co powtarzać
+  }
+
+  if (BLOCKED_STATUSES.includes(lastStatus)) throw blockedError(lastStatus, url);
+  throw new Error("HTTP " + lastStatus + " dla " + url);
 }
 
 async function downloadAndProcessImage(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+  // Te same "przeglądarkowe" nagłówki co przy stronie — serwer zdjęć
+  // (mediaservice.audi.com) też potrafi odrzucać zapytania wyglądające na
+  // automat. Dest/Mode ustawiamy na "image", bo tak wygląda pobieranie
+  // obrazka przez przeglądarkę.
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": BROWSER_HEADERS["User-Agent"],
+      Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      "Accept-Language": BROWSER_HEADERS["Accept-Language"],
+      "Sec-Ch-Ua": BROWSER_HEADERS["Sec-Ch-Ua"],
+      "Sec-Ch-Ua-Mobile": "?0",
+      "Sec-Ch-Ua-Platform": '"Windows"',
+      "Sec-Fetch-Dest": "image",
+      "Sec-Fetch-Mode": "no-cors",
+      "Sec-Fetch-Site": "cross-site",
+      Referer: "https://www.audi.pl/",
+    },
+    redirect: "follow",
+  });
   if (!res.ok) throw new Error("Nie udało się pobrać zdjęcia: HTTP " + res.status);
   const arrayBuffer = await res.arrayBuffer();
   return grayOutBackground(Buffer.from(arrayBuffer));
@@ -307,6 +375,23 @@ export default async function handler(req, res) {
       warnings,
     });
   } catch (e) {
+    // Blokada antybotowa to nie "błąd serwera" — pokazujemy wtedy zwykły,
+    // zrozumiały komunikat zamiast surowego "HTTP 503".
+    if (e && e.blocked) {
+      res.status(200).json({
+        brand: "Audi",
+        model: null,
+        year: null,
+        price: null,
+        monthlyPayment: null,
+        bodyType: null,
+        description: "",
+        images: [],
+        sourceUrl: url,
+        warnings: [e.message],
+      });
+      return;
+    }
     res.status(500).json({ error: "Nie udało się pobrać/przetworzyć ogłoszenia: " + e.message });
   }
 }
