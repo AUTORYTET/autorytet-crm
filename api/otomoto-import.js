@@ -182,16 +182,56 @@ function buildDescription(fields) {
   return lines.join("\n");
 }
 
+// Patrz obszerny komentarz przy tym samym zestawie nagłówków w
+// api/audi-import.js — chodzi o to, żeby zapytanie o publicznie dostępną
+// stronę wyglądało tak samo jak zwykłe wejście z przeglądarki, bo samo
+// "User-Agent" bywa odrzucane przez filtry antybotowe (HTTP 403/503).
+// Celowo bez "Accept-Encoding" (patrz uwaga tamże).
+const BROWSER_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+  "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+  "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+  "Sec-Ch-Ua-Mobile": "?0",
+  "Sec-Ch-Ua-Platform": '"Windows"',
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
+};
+
+const BLOCKED_STATUSES = [403, 429, 503];
+
+function blockedError(status) {
+  const e = new Error(
+    "Strona OTOMOTO odrzuciła zapytanie wysłane z serwera (kod " +
+      status +
+      "). Ogłoszenie normalnie otwiera się w przeglądarce, ale OTOMOTO blokuje " +
+      "automatyczne pobieranie z serwerów. Uzupełnij pola poniżej ręcznie albo " +
+      "daj znać — przygotuję inny sposób importu."
+  );
+  e.blocked = true;
+  return e;
+}
+
 async function fetchListingHtml(url) {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept-Language": "pl-PL,pl;q=0.9",
-    },
-  });
-  if (!res.ok) throw new Error("HTTP " + res.status + " dla " + url);
-  return await res.text();
+  let lastStatus = null;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
+
+    const res = await fetch(url, { headers: BROWSER_HEADERS, redirect: "follow" });
+    if (res.ok) return await res.text();
+
+    lastStatus = res.status;
+    if (!BLOCKED_STATUSES.includes(res.status)) break;
+  }
+
+  if (BLOCKED_STATUSES.includes(lastStatus)) throw blockedError(lastStatus);
+  throw new Error("HTTP " + lastStatus + " dla " + url);
 }
 
 export default async function handler(req, res) {
@@ -252,6 +292,14 @@ export default async function handler(req, res) {
       warnings,
     });
   } catch (e) {
+    if (e && e.blocked) {
+      res.status(200).json({
+        brand: null, model: null, year: null, price: null, monthlyPayment: null,
+        bodyType: null, description: "", images: [], sourceUrl: url,
+        warnings: [e.message],
+      });
+      return;
+    }
     res.status(500).json({ error: "Nie udało się pobrać/przetworzyć ogłoszenia: " + e.message });
   }
 }
