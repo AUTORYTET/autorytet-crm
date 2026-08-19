@@ -3765,17 +3765,36 @@ function VehicleFormModal({ initial, onClose, onSave }) {
       const html = await file.text();
       const doc = new DOMParser().parseFromString(html, "text/html");
 
-      // Te same "liściowe" fragmenty tekstu, których szuka serwer — etykieta
-      // (np. "Cena specjalna") i jej wartość lądują wtedy obok siebie.
+      // Zbieramy "własny" tekst każdego elementu (tylko to, co leży
+      // bezpośrednio w nim). Musi być dokładnie tak samo jak po stronie
+      // serwera — patrz obszerny komentarz przy extractLeafTexts w
+      // api/audi-import.js. W skrócie: cena na audi.pl siedzi w elemencie,
+      // który zawiera odnośnik do przypisu, więc branie tylko elementów bez
+      // dzieci gubiło kwotę i podstawiało numerek przypisu.
       const texts = [];
-      doc.body &&
+      if (doc.body) {
         doc.body.querySelectorAll("*").forEach((el) => {
-          if (el.children.length > 0) return;
-          const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+          let own = "";
+          el.childNodes.forEach((n) => {
+            if (n.nodeType === 3) own += n.nodeValue;
+          });
+          const t = own.replace(/\s+/g, " ").trim();
           if (t) texts.push(t);
         });
+      }
 
-      const imageUrls = html.match(/https:\/\/mediaservice\.audi\.com\/media\/[^"'\s)\\]+/g) || [];
+      // Adresy zdjęć bywają schowane w danych JSON strony, gdzie ukośniki są
+      // "uciekane" (https:\/\/...) - odkręcamy to przed szukaniem.
+      // Wzorzec musi być IDENTYCZNY z tym po stronie serwera (AUDI_IMAGE_RE
+      // w api/audi-import.js) - patrz tamtejszy komentarz: bierzemy tylko
+      // /media/fast/ (rendery auta, a nie ikonki wyposażenia) i kotwiczymy na
+      // rozszerzeniu pliku, bo bez tego adresy "uciekały" na dziesiątki
+      // tysięcy znaków i serwer zdjęć odrzucał je błędem 400.
+      const htmlForUrls = html.replace(/\\\//g, "/").replace(/&amp;/g, "&");
+      const imageUrls =
+        htmlForUrls.match(
+          /https:\/\/mediaservice\.audi\.com\/media\/fast\/[A-Za-z0-9._\-/]+\.(?:jpg|jpeg|png|webp)(?:\?wid=\d+)?/gi
+        ) || [];
       const title = (doc.querySelector("title") && doc.querySelector("title").textContent) || "";
 
       // Adres oryginalnej oferty: jeśli w polu obok jest wklejony link,
