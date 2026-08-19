@@ -3750,6 +3750,76 @@ function VehicleFormModal({ initial, onClose, onSave }) {
     }
   };
 
+  // ---- Import z ZAPISANEJ strony (Ctrl+S) ---------------------------------
+  // audi.pl blokuje pobieranie stron przez serwery (odpowiada kodem 503),
+  // więc tutaj robimy to odwrotnie: to PRZEGLĄDARKA otwiera zapisany przez
+  // Ciebie plik, wyciąga z niego tekst i adresy zdjęć, a na serwer leci już
+  // tylko malutka paczka danych. Skoro nic nie pobieramy z audi.pl po stronie
+  // serwera, nie ma czego zablokować.
+  const importFromSavedPage = async (file) => {
+    if (!file) return;
+    setImporting(true);
+    setImportError(null);
+    setImportWarnings([]);
+    try {
+      const html = await file.text();
+      const doc = new DOMParser().parseFromString(html, "text/html");
+
+      // Te same "liściowe" fragmenty tekstu, których szuka serwer — etykieta
+      // (np. "Cena specjalna") i jej wartość lądują wtedy obok siebie.
+      const texts = [];
+      doc.body &&
+        doc.body.querySelectorAll("*").forEach((el) => {
+          if (el.children.length > 0) return;
+          const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+          if (t) texts.push(t);
+        });
+
+      const imageUrls = html.match(/https:\/\/mediaservice\.audi\.com\/media\/[^"'\s)\\]+/g) || [];
+      const title = (doc.querySelector("title") && doc.querySelector("title").textContent) || "";
+
+      // Adres oryginalnej oferty: jeśli w polu obok jest wklejony link,
+      // używamy go; inaczej próbujemy odczytać go z samej zapisanej strony.
+      const canonical = doc.querySelector('link[rel="canonical"]');
+      const ogUrl = doc.querySelector('meta[property="og:url"]');
+      const sourceUrl =
+        importUrl.trim() ||
+        (canonical && canonical.getAttribute("href")) ||
+        (ogUrl && ogUrl.getAttribute("content")) ||
+        "";
+
+      const r = await fetch("/api/audi-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texts, imageUrls, title, sourceUrl }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        setImportError(data.error || "Nie udało się odczytać zapisanej strony.");
+        return;
+      }
+      setForm((f) => ({
+        ...f,
+        brand: data.brand || f.brand,
+        model: data.model || f.model,
+        year: data.year || f.year,
+        price: data.price || f.price,
+        monthlyPayment: data.monthlyPayment || f.monthlyPayment,
+        bodyType: data.bodyType || f.bodyType,
+        description: data.description || f.description,
+        imageUrl: (data.images && data.images[0]) || f.imageUrl,
+        imageUrls: data.images && data.images.length ? data.images : f.imageUrls,
+        sourceUrl: data.sourceUrl || f.sourceUrl,
+      }));
+      if (data.sourceUrl && !importUrl.trim()) setImportUrl(data.sourceUrl);
+      setImportWarnings(data.warnings || []);
+    } catch (e) {
+      setImportError("Nie udało się odczytać pliku: " + e.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="crm-modal-overlay" style={S.modalOverlay} onClick={onClose}>
       <div className="crm-modal" style={S.modal} onClick={(e) => e.stopPropagation()}>
@@ -3781,6 +3851,39 @@ function VehicleFormModal({ initial, onClose, onSave }) {
           <div style={{ fontSize: 11.5, color: "#9A9A9A", marginTop: 6 }}>
             Dla linków z audi.pl zdjęcia są automatycznie wgrywane z wyszarzonym tłem (dopasowanym do koloru strony).
           </div>
+
+          {/* Droga zapasowa dla audi.pl, które blokuje pobieranie ofert przez
+              serwery. Użytkownik zapisuje stronę oferty (Ctrl+S), a my
+              odczytujemy ją tutaj, w przeglądarce - wtedy nie ma czego blokować. */}
+          <div style={{ borderTop: "1px solid #E7E5E2", marginTop: 12, paddingTop: 10 }}>
+            <div style={{ fontSize: 11.5, color: "#6B6B6B", lineHeight: 1.5 }}>
+              <b>audi.pl blokuje pobieranie po linku?</b> Otwórz ofertę w przeglądarce, naciśnij <b>Ctrl+S</b>,
+              zapisz jako „Strona internetowa, tylko HTML", a potem wskaż ten plik poniżej.
+            </div>
+            <label
+              style={{
+                ...S.secondaryBtn,
+                display: "inline-flex",
+                marginTop: 8,
+                cursor: importing ? "default" : "pointer",
+                opacity: importing ? 0.6 : 1,
+              }}
+            >
+              {importing ? "Wczytywanie…" : "Wybierz zapisaną stronę (.html)"}
+              <input
+                type="file"
+                accept=".html,.htm,text/html"
+                disabled={importing}
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files && e.target.files[0];
+                  e.target.value = ""; // pozwala wybrać ten sam plik ponownie
+                  importFromSavedPage(file);
+                }}
+              />
+            </label>
+          </div>
+
           {importError && (
             <div style={{ color: "#E4241B", fontSize: 12.5, marginTop: 8 }}>{importError}</div>
           )}
