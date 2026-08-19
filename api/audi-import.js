@@ -84,31 +84,82 @@ const BODY_TYPE_PATTERNS = [
 // Etykieta (dokładna, z wielkością liter jak na stronie) -> nazwa pola w
 // odpowiedzi + funkcja parsująca. Podobnie jak w fill_car_details_from_otomoto.js.
 const LABEL_MAP = {
-  "Cena specjalna": { field: "priceSpecial", parse: parsePrice },
-  "Cena promocyjna": { field: "priceSpecial", parse: parsePrice },
-  "Cena katalogowa": { field: "priceCatalog", parse: parsePrice },
-  "Cena": { field: "priceGeneric", parse: parsePrice },
-  "Rata": { field: "monthlyPayment", parse: parsePrice },
+  "Cena specjalna": { field: "priceSpecial", parse: parseCarPrice },
+  "Cena promocyjna": { field: "priceSpecial", parse: parseCarPrice },
+  "Cena po rabacie": { field: "priceSpecial", parse: parseCarPrice },
+  "Cena katalogowa": { field: "priceCatalog", parse: parseCarPrice },
+  "Cena regularna": { field: "priceCatalog", parse: parseCarPrice },
+  "Cena": { field: "priceGeneric", parse: parseCarPrice },
+  "Cena brutto": { field: "priceGeneric", parse: parseCarPrice },
+  "Rata": { field: "monthlyPayment", parse: parseMonthlyPayment },
+  "Rata miesięczna": { field: "monthlyPayment", parse: parseMonthlyPayment },
+  "Miesięczna rata": { field: "monthlyPayment", parse: parseMonthlyPayment },
+  "Rata od": { field: "monthlyPayment", parse: parseMonthlyPayment },
   "Rok produkcji": { field: "year", parse: parseYear },
+  "Rok modelowy": { field: "year", parse: parseYear },
   "Rocznik": { field: "year", parse: parseYear },
   "Kolor nadwozia": { field: "color", parse: parseText },
   "Kolor lakieru": { field: "color", parse: parseText },
   "Nadwozie": { field: "bodyTypeRaw", parse: parseText },
-  "Pojemność skokowa": { field: "engineCapacity", parse: parseText },
-  "Moc": { field: "power", parse: parseText },
+  "Pojemność skokowa": { field: "engineCapacity", parse: parseSpecWithNumber },
+  "Moc": { field: "power", parse: parsePowerSpec },
+  "Moc maksymalna": { field: "power", parse: parsePowerSpec },
   "Skrzynia biegów": { field: "gearbox", parse: parseText },
   "Napęd": { field: "drivetrain", parse: parseText },
-  "Przyspieszenie 0-100 km/h": { field: "acceleration", parse: parseText },
-  "Zużycie paliwa": { field: "fuelConsumption", parse: parseText },
-  "Emisja CO2": { field: "co2", parse: parseText },
+  "Przyspieszenie 0-100 km/h": { field: "acceleration", parse: parseSpecWithNumber },
+  "Zużycie paliwa": { field: "fuelConsumption", parse: parseSpecWithNumber },
+  "Emisja CO2": { field: "co2", parse: parseSpecWithNumber },
 };
 
 function parseText(v) {
   return v && v.trim() ? v.trim() : null;
 }
+
+// Dane techniczne MUSZĄ zawierać liczbę. Bez tego warunku etykieta "Moc"
+// łapała sąsiedni tekst "maksymalna" (z nagłówka "Moc maksymalna"), a
+// "Emisja CO2" - napis "w cyklu mieszanym", i takie śmieci lądowały w opisie
+// pojazdu publikowanym potem na stronie.
+function parseSpecWithNumber(v) {
+  const s = String(v || "").trim();
+  return /\d/.test(s) ? s : null;
+}
+
+// Moc podajemy w ujednoliconej postaci, niezależnie od tego, jak zapisała ją
+// strona (np. "373 kW (507 KM)", "507 KM", "373 kW").
+function parsePowerSpec(v) {
+  const s = String(v || "");
+  const both = s.match(/(\d+)\s*kW\s*\(\s*(\d+)\s*KM\s*\)/i);
+  if (both) return `${both[1]} kW (${both[2]} KM)`;
+  const km = s.match(/(\d+)\s*KM\b/i);
+  if (km) return `${km[1]} KM`;
+  const kw = s.match(/(\d+)\s*kW\b/i);
+  if (kw) return `${kw[1]} kW`;
+  return null;
+}
 function parsePrice(v) {
   const n = parseInt(String(v).replace(/[^\d]/g, ""), 10);
   return isNaN(n) ? null : n;
+}
+
+// Ceny i raty czytamy "z rozsądkiem". Bez tego zdarzało się, że etykieta
+// "Cena" trafiała na przypadkowy sąsiedni tekst (np. numer kroku "1") i do
+// formularza wpadała cena 1 zł. Wartości spoza sensownego zakresu odrzucamy,
+// dzięki czemu szansę dostaje kolejna, właściwa etykieta na stronie.
+const MIN_CAR_PRICE = 10000;      // realna cena auta w zł
+const MAX_CAR_PRICE = 10000000;
+const MIN_MONTHLY_PAYMENT = 200;  // realna rata leasingu/kredytu w zł
+const MAX_MONTHLY_PAYMENT = 200000;
+
+function parseCarPrice(v) {
+  const n = parsePrice(v);
+  if (n === null || n < MIN_CAR_PRICE || n > MAX_CAR_PRICE) return null;
+  return n;
+}
+
+function parseMonthlyPayment(v) {
+  const n = parsePrice(v);
+  if (n === null || n < MIN_MONTHLY_PAYMENT || n > MAX_MONTHLY_PAYMENT) return null;
+  return n;
 }
 function parseYear(v) {
   const m = String(v).match(/20\d{2}/);
@@ -117,17 +168,70 @@ function parseYear(v) {
 
 // Wszystkie "liściowe" fragmenty tekstu ze strony, w kolejności występowania
 // (patrz identyczna metoda i uzasadnienie w fill_car_details_from_otomoto.js).
+// Zbiera "własny" tekst każdego elementu, czyli tylko to, co leży
+// bezpośrednio w nim - bez tekstu zagnieżdżonych elementów.
+//
+// DLACZEGO WŁAŚNIE TAK (kosztowało nas to jeden nieudany import):
+// wcześniejsza wersja brała tylko elementy BEZ dzieci. Na audi.pl cena jest
+// zapisana jako <p>629 859 PLN<span><a>1</a></span></p> - czyli kwota siedzi
+// w elemencie, który MA dziecko (odnośnik do przypisu). Taki element był
+// pomijany, a do formularza trafiał sam numerek przypisu ("1") zamiast ceny.
+// Branie wyłącznie bezpośredniego tekstu rozwiązuje to i nadal działa dla
+// zwykłych, "liściowych" elementów.
 function extractLeafTexts($) {
   const texts = [];
   $("body")
     .find("*")
     .each(function () {
-      const el = $(this);
-      if (el.children().length > 0) return;
-      const t = el.text().replace(/\s+/g, " ").trim();
+      const own = $(this)
+        .contents()
+        .filter(function () {
+          return this.type === "text";
+        })
+        .text();
+      const t = own.replace(/\s+/g, " ").trim();
       if (t) texts.push(t);
     });
   return texts;
+}
+
+// Rocznik na audi.pl stoi w bloku "Najważniejsze cechy pojazdu" jako sama
+// liczba, bez żadnej etykiety - więc szukamy go pozycyjnie, w obrębie tego
+// bloku. Wymagamy, żeby fragment był DOKŁADNIE czterocyfrowym rokiem, bo tuż
+// obok stoi numer identyfikacyjny pojazdu (np. "2026107266"), który zaczyna
+// się tak samo i bez tego warunku zostałby wzięty za rocznik.
+function extractModelYear(texts) {
+  const marker = texts.findIndex((t) => /Najważniejsze cechy pojazdu/i.test(t));
+  const from = marker >= 0 ? marker : 0;
+  const to = Math.min(texts.length, from + 40);
+  const maxYear = new Date().getFullYear() + 2;
+  for (let i = from; i < to; i++) {
+    const m = /^(20\d{2})$/.exec(String(texts[i]).trim());
+    if (m) {
+      const y = parseInt(m[1], 10);
+      if (y >= 2000 && y <= maxYear) return y;
+    }
+  }
+  return null;
+}
+
+// Blok "Najważniejsze cechy pojazdu" to lista wartości bez etykiet (etykiety
+// są tam ikonkami), więc rozpoznajemy je po samej treści.
+function extractKeyFeatures(texts) {
+  const marker = texts.findIndex((t) => /Najważniejsze cechy pojazdu/i.test(t));
+  if (marker < 0) return {};
+  const slice = texts.slice(marker, Math.min(texts.length, marker + 40));
+  const out = {};
+  for (const raw of slice) {
+    const t = String(raw).trim();
+    if (!out.fuelType && /^(Benzyna|Diesel|Elektryczny|Hybryda|Hybrydowy|Plug-in hybrid.*)$/i.test(t)) out.fuelType = t;
+    else if (!out.power && /^\d+\s*kW\s*\(\s*\d+\s*KM\s*\)$/i.test(t)) out.power = t;
+    else if (!out.gearbox && /^(Automatyczna|Manualna|Automatyczna skrzynia biegów)$/i.test(t)) out.gearbox = t;
+    else if (!out.drivetrain && /quattro|napęd na/i.test(t)) out.drivetrain = t;
+  }
+  const locIdx = texts.findIndex((t) => /^Lokalizacja pojazdu:?$/i.test(String(t).trim()));
+  if (locIdx >= 0 && texts[locIdx + 1]) out.location = String(texts[locIdx + 1]).trim();
+  return out;
 }
 
 function extractLabelValuePairs(texts) {
@@ -179,18 +283,41 @@ function extractBodyType(fullText, bodyTypeRaw) {
 // Porządkuje listę adresów zdjęć: usuwa duplikaty i ujednolica szerokość
 // renderowanego obrazu. Używane w obu trybach (pobieranie strony przez nas
 // oraz zapisana strona przysłana z przeglądarki).
+// Wzorzec adresu ZDJĘCIA POJAZDU na audi.pl.
+//
+// Dwie rzeczy są tu kluczowe i obie kosztowały nas nieudany import:
+//
+// 1) Adres musi kończyć się rozszerzeniem pliku. Wcześniejsza, luźna wersja
+//    ("bierz wszystko aż do cudzysłowu") rozjeżdżała się w głąb danych
+//    strony i produkowała adresy po 20-38 TYSIĘCY znaków, które serwer Audi
+//    odrzucał błędem HTTP 400. Stąd sztywna lista dozwolonych znaków i
+//    zakotwiczenie na .jpg/.png/.webp.
+//
+// 2) Bierzemy wyłącznie ścieżkę /media/fast/ - to są rendery konkretnego
+//    egzemplarza. Pod /media/cdb/ leżą ikonki wyposażenia (na jednej stronie
+//    jest ich ok. 170) i trafiłyby do galerii auta jako przypadkowe obrazki.
+const AUDI_IMAGE_RE =
+  /https:\/\/mediaservice\.audi\.com\/media\/fast\/[A-Za-z0-9._\-/]+\.(?:jpg|jpeg|png|webp)(?:\?wid=\d+)?/gi;
+
 function normalizeImageUrls(rawUrls) {
   const seen = new Set();
   const urls = [];
   for (const raw of rawUrls) {
-    if (!raw || !/^https:\/\/mediaservice\.audi\.com\//i.test(raw)) continue;
-    const clean = String(raw).replace(/&amp;/g, "&");
-    const withWidth = /[?&]wid=/.test(clean)
-      ? clean.replace(/([?&])wid=\d+/, "$1wid=1600")
-      : clean + (clean.includes("?") ? "&" : "?") + "wid=1600";
-    if (!seen.has(withWidth)) {
-      seen.add(withWidth);
-      urls.push(withWidth);
+    if (!raw) continue;
+    // Adresy bywają zapisane w stronie z ukośnikami w cudzysłowie (\/) oraz
+    // z encjami HTML (&amp;) - jedno i drugie trzeba najpierw odkręcić.
+    const unescaped = String(raw).replace(/\\\//g, "/").replace(/&amp;/g, "&").trim();
+    // Przepuszczamy adres jeszcze raz przez wzorzec - dzięki temu nawet jeśli
+    // przeglądarka przyśle coś z doklejonym ogonem, obcinamy go tutaj.
+    const m = unescaped.match(new RegExp(AUDI_IMAGE_RE.source, "i"));
+    if (!m) continue;
+    const clean = m[0];
+    // UWAGA: celowo NIE podmieniamy parametru "wid" (szerokości obrazu).
+    // Wcześniejsza wersja ustawiała go na 1600 i serwer Audi odrzucał takie
+    // adresy - akceptuje tylko swoje własne rozmiary.
+    if (!seen.has(clean)) {
+      seen.add(clean);
+      urls.push(clean);
     }
     if (urls.length >= MAX_IMAGES) break;
   }
@@ -198,12 +325,13 @@ function normalizeImageUrls(rawUrls) {
 }
 
 function extractImageUrls(html) {
-  return normalizeImageUrls(html.match(/https:\/\/mediaservice\.audi\.com\/media\/[^"'\s)\\]+/g) || []);
+  const src = html.replace(/\\\//g, "/").replace(/&amp;/g, "&");
+  return normalizeImageUrls(src.match(AUDI_IMAGE_RE) || []);
 }
 
 function buildDescription(fields) {
   const lines = [];
-  const specLine = [fields.engineCapacity, fields.power, fields.gearbox, fields.drivetrain]
+  const specLine = [fields.engineCapacity, fields.power, fields.fuelType, fields.gearbox, fields.drivetrain]
     .filter(Boolean)
     .join(" · ");
   if (specLine) lines.push(specLine);
@@ -211,6 +339,7 @@ function buildDescription(fields) {
   if (fields.fuelConsumption) lines.push(`Zużycie paliwa: ${fields.fuelConsumption}`);
   if (fields.co2) lines.push(`Emisja CO2: ${fields.co2}`);
   if (fields.color) lines.push(`Kolor: ${fields.color}`);
+  if (fields.location) lines.push(`Lokalizacja pojazdu: ${fields.location}`);
   return lines.join("\n");
 }
 
@@ -324,9 +453,23 @@ async function uploadProcessedImage(supabase, buffer, index) {
 async function buildImportResult({ texts, imageUrls, title, sourceUrl, debug }) {
   const warnings = [];
   const fields = extractLabelValuePairs(texts);
+  const features = extractKeyFeatures(texts);
+  // Wartości z bloku "Najważniejsze cechy" uzupełniają to, czego nie udało
+  // się znaleźć po etykietach (nie nadpisują danych z etykiet).
+  for (const k of ["fuelType", "power", "gearbox", "drivetrain"]) {
+    if (!fields[k] && features[k]) fields[k] = features[k];
+  }
+  // Przy mocy wybieramy pełniejszy zapis: "373 kW (507 KM)" jest bardziej
+  // użyteczny w ofercie niż samo "373 kW".
+  if (features.power && /KM/i.test(features.power) && !/KM/i.test(fields.power || "")) {
+    fields.power = parsePowerSpec(features.power) || fields.power;
+  }
+  if (!fields.year) fields.year = extractModelYear(texts);
+  if (features.location) fields.location = features.location;
+
   const fullText = texts.join(" ");
   const model = modelFromTitle(title);
-  const bodyType = extractBodyType(fullText, fields.bodyTypeRaw);
+  const bodyType = extractBodyType(fullText, fields.bodyTypeRaw || texts[1] || "");
 
   if (debug) {
     return { debug: true, model, bodyType, fields, imageUrlsFound: imageUrls, leafTextsSample: texts.slice(0, 400) };
