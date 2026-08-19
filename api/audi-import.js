@@ -195,6 +195,26 @@ function extractLeafTexts($) {
   return texts;
 }
 
+// Zapasowe szukanie kwot, gdy zawiodło dopasowanie po etykietach (np. strona
+// zapisała się w innym układzie). Szukamy fragmentów będących samą kwotą,
+// np. "629 859 PLN" albo "4 645 PLN netto".
+//
+// WAŻNE: celowo pomijamy "Najniższa cena z 30 dni przed obniżką" - to cena
+// historyczna wymagana przepisami, a NIE cena sprzedaży. Wzięcie jej byłoby
+// wystawieniem auta po złej cenie.
+function findAmountsInTexts(texts) {
+  const amounts = [];
+  for (const raw of texts) {
+    const t = String(raw).trim();
+    if (/najniższa cena/i.test(t)) continue;
+    const m = t.match(/^([\d][\d\s  ]{2,12})\s*(?:PLN|zł)\b(.*)$/i);
+    if (!m) continue;
+    const value = parseInt(m[1].replace(/\D/g, ""), 10);
+    if (!isNaN(value)) amounts.push({ value, isNet: /netto/i.test(m[2] || "") });
+  }
+  return amounts;
+}
+
 // Rocznik na audi.pl stoi w bloku "Najważniejsze cechy pojazdu" jako sama
 // liczba, bez żadnej etykiety - więc szukamy go pozycyjnie, w obrębie tego
 // bloku. Wymagamy, żeby fragment był DOKŁADNIE czterocyfrowym rokiem, bo tuż
@@ -476,11 +496,39 @@ async function buildImportResult({ texts, imageUrls, title, sourceUrl, debug }) 
   }
 
   if (!model) warnings.push("Nie udało się rozpoznać modelu z tytułu strony - uzupełnij ręcznie.");
-  const price = fields.priceSpecial || fields.priceCatalog || fields.priceGeneric || null;
-  if (!price) warnings.push("Nie udało się rozpoznać ceny - uzupełnij ręcznie.");
-  if (!fields.year) warnings.push("Nie udało się rozpoznać roku produkcji - uzupełnij ręcznie.");
+
+  // Cena: najpierw po etykietach, a jeśli to zawiodło - szukamy samych kwot
+  // w treści strony (z pominięciem ceny historycznej "z 30 dni").
+  let price = fields.priceSpecial || fields.priceCatalog || fields.priceGeneric || null;
+  let monthlyPayment = fields.monthlyPayment || null;
+  if (!price || !monthlyPayment) {
+    const amounts = findAmountsInTexts(texts);
+    if (!price) {
+      const carPrices = amounts.filter((a) => a.value >= MIN_CAR_PRICE && a.value <= MAX_CAR_PRICE);
+      if (carPrices.length) price = carPrices[0].value;
+    }
+    if (!monthlyPayment) {
+      const rates = amounts.filter((a) => a.value >= MIN_MONTHLY_PAYMENT && a.value < MIN_CAR_PRICE);
+      if (rates.length) monthlyPayment = rates[0].value;
+    }
+  }
+
+  // Krótka diagnostyka doklejana do ostrzeżeń. Dzięki niej, gdy import się nie
+  // uda, sam komunikat mówi CO widział serwer - bez zgadywania i bez proszenia
+  // o zaglądanie w narzędzia deweloperskie.
+  const diag = `(przeanalizowano ${texts.length} fragmentów tekstu, znaleziono ${imageUrls.length} zdjęć)`;
+
+  if (!price) warnings.push(`Nie udało się rozpoznać ceny - uzupełnij ręcznie. ${diag}`);
+  if (!fields.year) warnings.push(`Nie udało się rozpoznać roku produkcji - uzupełnij ręcznie. ${diag}`);
   if (!bodyType) warnings.push("Nie udało się rozpoznać typu nadwozia - wybierz ręcznie z listy.");
-  if (imageUrls.length === 0) warnings.push("Nie znaleziono zdjęć na tej stronie.");
+  if (imageUrls.length === 0) {
+    warnings.push(`Nie znaleziono zdjęć na tej stronie. ${diag}`);
+  } else if (imageUrls.length < 4) {
+    warnings.push(
+      `Znaleziono tylko ${imageUrls.length} zdj. - strona mogła zostać zapisana, zanim doładowała się galeria. ` +
+        `Otwórz ofertę, przewiń ją do końca, poczekaj aż pojawią się wszystkie zdjęcia i zapisz ją ponownie (Ctrl+S).`
+    );
+  }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   const processedImages = [];
@@ -510,7 +558,7 @@ async function buildImportResult({ texts, imageUrls, title, sourceUrl, debug }) 
     model,
     year: fields.year || null,
     price,
-    monthlyPayment: fields.monthlyPayment || null,
+    monthlyPayment,
     bodyType,
     description: buildDescription(fields),
     images: processedImages,
