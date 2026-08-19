@@ -62,9 +62,9 @@
  *     co się udało znaleźć, a resztę uzupełnisz ręcznie (tak jak zawsze).
  */
 
-const cheerio = require("cheerio");
-const { createClient } = require("@supabase/supabase-js");
-const { grayOutBackground } = require("../lib/grayBackground");
+import * as cheerio from "cheerio";
+import { createClient } from "@supabase/supabase-js";
+import { grayOutBackground } from "../lib/grayBackground.js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -234,7 +234,7 @@ async function uploadProcessedImage(supabase, buffer, index) {
   return data.publicUrl;
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   const url = req.query && req.query.url;
   const debug = req.query && (req.query.debug === "1" || req.query.debug === "true");
 
@@ -309,4 +309,4 @@ module.exports = async function handler(req, res) {
   } catch (e) {
     res.status(500).json({ error: "Nie udało się pobrać/przetworzyć ogłoszenia: " + e.message });
   }
-};
+}

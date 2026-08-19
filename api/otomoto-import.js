@@ -1,282 +1,257 @@
-// Serverless function (deploys automatically on Vercel as /api/otomoto-import)
-// Pobiera dane z JEDNEGO wskazanego ogłoszenia OtoMoto (link wklejony przez admina
-// w panelu CRM) — tytuł, opis, cenę, rok, przebieg, paliwo, skrzynię i zdjęcia.
-//
-// UWAGA: OtoMoto nie udostępnia oficjalnego publicznego API do odczytu ogłoszeń,
-// więc ta funkcja parsuje HTML strony ogłoszenia. Może wymagać poprawek, jeśli
-// OtoMoto zmieni strukturę swojej strony.
+/**
+ * api/otomoto-import.js
+ *
+ * Endpoint wywoływany przez przycisk "Pobierz dane" w CRM (Pojazdy -> Nowy/
+ * Edytuj pojazd), gdy wklejony link prowadzi do otomoto.pl. Wcześniej ten
+ * plik NIE ISTNIAŁ w projekcie (front-end już go wywoływał, ale brakowało
+ * kodu po stronie serwera) - stąd przycisk dla linków OTOMOTO nie działał.
+ * Ten plik go uzupełnia, w tym samym duchu co siostrzany skrypt
+ * fill_car_details_from_otomoto.js (te same, potwierdzone realnymi
+ * zrzutami ekranu etykiety pól technicznych: Przebieg, Rodzaj paliwa,
+ * Skrzynia biegów, Pojemność skokowa, Moc, Liczba drzwi, Liczba miejsc,
+ * Kolor, Stan, Bezwypadkowy).
+ *
+ * ZWRACANY KONTRAKT (identyczny jak /api/audi-import):
+ *   { brand, model, year, price, monthlyPayment, bodyType, description,
+ *     images: string[], sourceUrl, warnings: string[] }
+ *
+ * Zdjęcia z OTOMOTO to prawdziwe zdjęcia konkretnego egzemplarza (nie
+ * studyjne renderowanie jak audi.pl) - NIE są tu przetwarzane (bez zmiany
+ * tła), zwracane są bezpośrednio jako linki do CDN OTOMOTO/OLX
+ * (apollo.olxcdn.com), dokładnie tak jak to widać na screenach z Twojego
+ * CRM (pole "LINK DO ZDJĘCIA (URL)").
+ *
+ * WAŻNE OGRANICZENIE - PRZECZYTAJ PRZED PIERWSZYM UŻYCIEM
+ * ---------------------------------------------------------
+ * Etykiety pól technicznych (Przebieg, Rodzaj paliwa, itd.) są sprawdzone na
+ * realnych zrzutach ekranu OTOMOTO (patrz fill_car_details_from_otomoto.js).
+ * Ekstrakcja marki/modelu/roku/ceny/rat jest jednak MOIM NAJLEPSZYM
+ * przybliżeniem - środowisko, w którym to pisałem, nie ma dostępu do
+ * internetu, więc nie mogłem przetestować tego na żywym ogłoszeniu. Dodaj
+ * do linku "&debug=1", żeby zamiast normalnej odpowiedzi zobaczyć surowe
+ * dane pomocnicze - jeśli czegoś zabraknie po pierwszym teście, wyślij mi
+ * to, a dopasuję wzorce.
+ */
+
+import * as cheerio from "cheerio";
+
+const BODY_TYPE_PATTERNS = [
+  { re: /limuzyn|sedan/i, val: "Sedan" },
+  { re: /kombi/i, val: "Kombi" },
+  { re: /\bsuv\b/i, val: "SUV" },
+  { re: /coup[eé]/i, val: "Coupe" },
+  { re: /cabrio|kabriolet/i, val: "Cabrio" },
+  { re: /\bvan\b|dostawcz/i, val: "Van" },
+  { re: /hatchback/i, val: "Hatchback" },
+];
+
+// Etykiety potwierdzone realnymi zrzutami ekranu OTOMOTO (panel "Szczegóły") —
+// patrz fill_car_details_from_otomoto.js — plus kilka dodatkowych (cena/rata/
+// marka/model/rok), które są moim najlepszym przybliżeniem (nieprzetestowane
+// na żywo, patrz komentarz na górze pliku).
+const LABEL_MAP = {
+  "Cena": { field: "price", parse: parsePrice },
+  "Cena brutto": { field: "price", parse: parsePrice },
+  "Rata": { field: "monthlyPayment", parse: parsePrice },
+  "Rata miesięczna": { field: "monthlyPayment", parse: parsePrice },
+  "Marka pojazdu": { field: "brand", parse: parseText },
+  "Model pojazdu": { field: "model", parse: parseText },
+  "Rok produkcji": { field: "year", parse: parseYear },
+  "Nadwozie": { field: "bodyTypeRaw", parse: parseText },
+  "Przebieg": { field: "mileage", parse: parseMileage },
+  "Rodzaj paliwa": { field: "fuelType", parse: parseText },
+  "Skrzynia biegów": { field: "gearbox", parse: parseText },
+  "Pojemność skokowa": { field: "engineCapacity", parse: parseText },
+  "Moc": { field: "power", parse: parsePower },
+  "Liczba drzwi": { field: "doors", parse: parseIntSafe },
+  "Liczba miejsc": { field: "seats", parse: parseIntSafe },
+  "Kolor": { field: "color", parse: parseText },
+  "Stan": { field: "condition", parse: parseText },
+  "Bezwypadkowy": { field: "accidentFree", parse: parseYesNo },
+};
+
+function parseText(v) { return v && v.trim() ? v.trim() : null; }
+function parseIntSafe(v) { const n = parseInt(String(v).replace(/\D/g, ""), 10); return isNaN(n) ? null : n; }
+function parseMileage(v) { const n = parseInt(String(v).replace(/[^\d]/g, ""), 10); return isNaN(n) ? null : n; }
+function parsePower(v) { const m = String(v).match(/(\d+)/); return m ? m[1] : null; }
+function parsePrice(v) { const n = parseInt(String(v).replace(/[^\d]/g, ""), 10); return isNaN(n) ? null : n; }
+function parseYear(v) { const m = String(v).match(/20\d{2}|19\d{2}/); return m ? parseInt(m[0], 10) : null; }
+function parseYesNo(v) {
+  const t = String(v).trim().toLowerCase();
+  if (t === "tak") return true;
+  if (t === "nie") return false;
+  return null;
+}
+
+function extractLeafTexts($) {
+  const texts = [];
+  $("body").find("*").each(function () {
+    const el = $(this);
+    if (el.children().length > 0) return;
+    const t = el.text().replace(/\s+/g, " ").trim();
+    if (t) texts.push(t);
+  });
+  return texts;
+}
+
+function extractLabelValuePairs(texts) {
+  const found = {};
+  for (let i = 0; i < texts.length - 1; i++) {
+    const mapping = LABEL_MAP[texts[i]];
+    if (mapping && found[mapping.field] === undefined) {
+      const value = mapping.parse(texts[i + 1]);
+      if (value !== null) found[mapping.field] = value;
+    }
+  }
+  Object.keys(LABEL_MAP).forEach((label) => {
+    const mapping = LABEL_MAP[label];
+    if (found[mapping.field] !== undefined) return;
+    const re = new RegExp("^" + label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:?\\s*(.+)$");
+    for (const t of texts) {
+      const m = t.match(re);
+      if (m && m[1]) {
+        const value = mapping.parse(m[1]);
+        if (value !== null) {
+          found[mapping.field] = value;
+          break;
+        }
+      }
+    }
+  });
+  return found;
+}
+
+// Zapasowe źródło marki/modelu: slug w adresie URL, np.
+// ".../oferta/audi-q8-50-tdi-ID6l6qLL.html" -> "Audi Q8 50 Tdi"
+function guessBrandModelFromUrl(url) {
+  try {
+    const path = new URL(url).pathname;
+    const slug = path.split("/").filter(Boolean).pop() || "";
+    const withoutId = slug.replace(/-ID[\w]+\.html?$/i, "").replace(/\.html?$/i, "");
+    const words = withoutId.split("-").filter(Boolean);
+    if (words.length === 0) return { brand: null, model: null };
+    const brand = words[0].charAt(0).toUpperCase() + words[0].slice(1);
+    const model = words.slice(1).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    return { brand, model: model || null };
+  } catch (e) {
+    return { brand: null, model: null };
+  }
+}
+
+function extractTitle($) {
+  let title = ($("title").first().text() || "").trim();
+  if (!title) title = ($('meta[property="og:title"]').attr("content") || "").trim();
+  return title ? title.split("|")[0].trim() : null;
+}
+
+function extractBodyType(fullText, bodyTypeRaw) {
+  const haystack = (bodyTypeRaw || "") + " " + fullText;
+  for (const p of BODY_TYPE_PATTERNS) {
+    if (p.re.test(haystack)) return p.val;
+  }
+  return null;
+}
+
+function extractImageUrls(html) {
+  const matches = html.match(/https:\/\/ireland\.apollo\.olxcdn\.com\/v1\/files\/[^"'\s)\\]+/g) || [];
+  const seen = new Set();
+  const urls = [];
+  for (const raw of matches) {
+    const clean = raw.replace(/&amp;/g, "&");
+    if (!seen.has(clean)) {
+      seen.add(clean);
+      urls.push(clean);
+    }
+    if (urls.length >= 16) break;
+  }
+  return urls;
+}
+
+function buildDescription(fields) {
+  const lines = [];
+  const specLine = [fields.engineCapacity, fields.power && `${fields.power} KM`, fields.gearbox]
+    .filter(Boolean)
+    .join(" · ");
+  if (specLine) lines.push(specLine);
+  if (fields.mileage) lines.push(`Przebieg: ${fields.mileage.toLocaleString("pl-PL")} km`);
+  if (fields.fuelType) lines.push(`Rodzaj paliwa: ${fields.fuelType}`);
+  if (fields.color) lines.push(`Kolor: ${fields.color}`);
+  if (fields.condition) lines.push(`Stan: ${fields.condition}`);
+  if (fields.accidentFree === true) lines.push("Bezwypadkowy: tak");
+  if (fields.accidentFree === false) lines.push("Bezwypadkowy: nie");
+  return lines.join("\n");
+}
+
+async function fetchListingHtml(url) {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept-Language": "pl-PL,pl;q=0.9",
+    },
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status + " dla " + url);
+  return await res.text();
+}
 
 export default async function handler(req, res) {
-  const url = (req.query.url || "").toString().trim();
+  const url = req.query && req.query.url;
+  const debug = req.query && (req.query.debug === "1" || req.query.debug === "true");
 
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    res.status(400).json({ error: "Nieprawidłowy adres URL." });
+  if (!url || !/^https?:\/\/(www\.)?otomoto\.pl\//i.test(url)) {
+    res.status(400).json({ error: "Podaj prawidłowy link do oferty na otomoto.pl." });
     return;
   }
 
-  const allowedHosts = ["otomoto.pl", "www.otomoto.pl", "autorytet.otomoto.pl"];
-  const hostOk = allowedHosts.some(
-    (h) => parsed.hostname === h || parsed.hostname.endsWith("." + h)
-  );
-  if (!hostOk) {
-    res.status(400).json({ error: "Ten link nie prowadzi do otomoto.pl." });
-    return;
-  }
+  const warnings = [];
 
-  let html;
   try {
-    const r = await fetch(parsed.toString(), {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "Accept-Language": "pl-PL,pl;q=0.9",
-      },
-    });
-    if (!r.ok) {
-      res.status(502).json({ error: `OtoMoto zwróciło błąd (status ${r.status}).` });
+    const html = await fetchListingHtml(url);
+    const $ = cheerio.load(html);
+    const texts = extractLeafTexts($);
+    const fields = extractLabelValuePairs(texts);
+    const fullText = texts.join(" ");
+    const title = extractTitle($);
+    const urlGuess = guessBrandModelFromUrl(url);
+    const bodyType = extractBodyType(fullText, fields.bodyTypeRaw);
+    const imageUrls = extractImageUrls(html);
+
+    if (debug) {
+      res.status(200).json({
+        debug: true,
+        title,
+        urlGuess,
+        bodyType,
+        fields,
+        imageUrlsFound: imageUrls,
+        leafTextsSample: texts.slice(0, 400),
+      });
       return;
     }
-    html = await r.text();
+
+    const brand = fields.brand || urlGuess.brand || null;
+    const model = fields.model || urlGuess.model || null;
+
+    if (!brand) warnings.push("Nie udało się rozpoznać marki - uzupełnij ręcznie.");
+    if (!model) warnings.push("Nie udało się rozpoznać modelu - uzupełnij ręcznie.");
+    if (!fields.price) warnings.push("Nie udało się rozpoznać ceny - uzupełnij ręcznie.");
+    if (!fields.year) warnings.push("Nie udało się rozpoznać roku produkcji - uzupełnij ręcznie.");
+    if (!bodyType) warnings.push("Nie udało się rozpoznać typu nadwozia - wybierz ręcznie z listy.");
+    if (imageUrls.length === 0) warnings.push("Nie znaleziono zdjęć na tej stronie.");
+
+    res.status(200).json({
+      brand,
+      model,
+      year: fields.year || null,
+      price: fields.price || null,
+      monthlyPayment: fields.monthlyPayment || null,
+      bodyType,
+      description: buildDescription(fields),
+      images: imageUrls,
+      sourceUrl: url,
+      warnings,
+    });
   } catch (e) {
-    res.status(502).json({ error: "Nie udało się pobrać strony ogłoszenia." });
-    return;
+    res.status(500).json({ error: "Nie udało się pobrać/przetworzyć ogłoszenia: " + e.message });
   }
-
-  const result = {
-    brand: "",
-    model: "",
-    year: "",
-    price: "",
-    mileage: "",
-    fuel: "",
-    gearbox: "",
-    bodyType: "",
-    description: "",
-    images: [],
-    sourceUrl: parsed.toString(),
-    warnings: [],
-  };
-
-  let nextData = null;
-  try {
-    const nextMatch = html.match(
-      /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/
-    );
-    if (nextMatch) nextData = JSON.parse(nextMatch[1]);
-  } catch (e) {
-    result.warnings.push("Nie udało się odczytać danych strukturalnych strony (__NEXT_DATA__).");
-  }
-
-  // --- Strategia 1: pierwszy węzeł z make/model/price (dane podstawowe) ---
-  if (nextData) {
-    const advert = findAdvertNode(nextData);
-    if (advert) {
-      result.brand = advert.make || advert.brand || result.brand;
-      result.model = advert.model || result.model;
-      result.year = advert.year || advert.productionYear || result.year;
-      result.price = advert.price?.value || advert.price || result.price;
-      result.mileage = advert.mileage || result.mileage;
-      result.fuel = advert.fuelType || advert.fuel || result.fuel;
-      result.gearbox = advert.gearbox || advert.transmission || result.gearbox;
-      result.bodyType = advert.bodyType || result.bodyType;
-      result.description = stripHtml(advert.description || "") || result.description;
-    }
-  }
-
-  // --- Strategia 2: ogólne skanowanie drzewa JSON w poszukiwaniu par klucz/wartość ---
-  // Wiele serwisów ogłoszeniowych trzyma parametry (rok, paliwo, skrzynia, nadwozie)
-  // jako tablicę obiektów {key/name, value/localizedValue}, niezależnie od tego,
-  // gdzie w strukturze się znajdują. To pozwala uzupełnić braki bez znajomości
-  // dokładnej ścieżki w danych OtoMoto.
-  if (nextData) {
-    const paramMap = {};
-    collectKeyValuePairs(nextData, paramMap);
-
-    if (!result.brand) result.brand = pickParam(paramMap, ["marka pojazdu", "marka", "make", "brand"]);
-    if (!result.model) result.model = pickParam(paramMap, ["model pojazdu", "model"]);
-    if (!result.year) result.year = pickParam(paramMap, ["rok produkcji", "rok-produkcji", "year", "production_year", "productionyear"]);
-    if (!result.fuel) result.fuel = pickParam(paramMap, ["rodzaj paliwa", "fuel_type", "fuel", "paliwo"]);
-    if (!result.gearbox) result.gearbox = pickParam(paramMap, ["skrzynia biegów", "skrzynia-biegow", "gearbox", "transmission"]);
-    if (!result.bodyType) result.bodyType = pickParam(paramMap, ["typ nadwozia", "body_type", "bodytype", "nadwozie"]);
-    if (!result.mileage) result.mileage = pickParam(paramMap, ["przebieg", "mileage"]);
-
-    // Długi opis — szukamy dowolnego pola "description" w całym drzewie
-    if (!result.description) {
-      const desc = findLongTextField(nextData, ["description", "opis"]);
-      if (desc) result.description = stripHtml(desc);
-    }
-  }
-
-  // --- Strategia 3: JSON-LD (schema.org) — uzupełnienie braków ---
-  try {
-    const ldMatches = [
-      ...html.matchAll(
-        /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g
-      ),
-    ];
-    for (const m of ldMatches) {
-      try {
-        const obj = JSON.parse(m[1]);
-        const items = Array.isArray(obj) ? obj : [obj];
-        for (const it of items) {
-          if (!result.description && it.description) result.description = it.description;
-          if (!result.price && it.offers?.price) result.price = it.offers.price;
-        }
-      } catch {}
-    }
-  } catch (e) {
-    result.warnings.push("Nie udało się odczytać danych JSON-LD.");
-  }
-
-  // --- Strategia 4: meta Open Graph — ostatnia deska ratunku dla opisu/tytułu ---
-  if (!result.description) {
-    const ogDesc = html.match(/<meta property="og:description" content="([^"]*)"/);
-    if (ogDesc) result.description = decodeHtmlEntities(ogDesc[1]);
-  }
-  if (!result.brand && !result.model) {
-    const ogTitle = html.match(/<meta property="og:title" content="([^"]*)"/);
-    if (ogTitle) {
-      const title = decodeHtmlEntities(ogTitle[1]);
-      // Tytuł ma zwykle postać: "[Nowy/Używany] Marka Model Rok - Cena PLN, Przebieg km - Otomoto.pl"
-      let namePart = title.split(" - ")[0].trim();
-
-      // Wyciągnij rok (4 cyfry na końcu), jeśli jeszcze go nie mamy
-      const yearMatch = namePart.match(/\s(\d{4})$/);
-      if (yearMatch) {
-        if (!result.year) result.year = yearMatch[1];
-        namePart = namePart.slice(0, yearMatch.index).trim();
-      }
-
-      // Usuń przedrostek określający stan pojazdu (Nowy / Używany)
-      namePart = namePart.replace(/^(Nowy|Używany|Uzywany)\s+/i, "");
-
-      const parts = namePart.split(" ");
-      result.brand = parts[0] || "";
-      result.model = parts.slice(1).join(" ") || "";
-      result.warnings.push(
-        "Marka i model zostały odgadnięte z tytułu ogłoszenia — sprawdź je."
-      );
-    }
-  }
-
-  // --- Zdjęcia: adresy CDN OtoMoto (ireland.apollo.olxcdn.com/v1/files/<token>/image) ---
-  // Uwaga: te adresy NIE mają rozszerzenia pliku (.jpg itp.) — kończą się na "/image"
-  // i opcjonalnie parametrami rozmiaru po średniku, np. ";s=5120x0;q=80".
-  try {
-    const cdnMatches = [
-      ...html.matchAll(/https:\/\/[a-z0-9.-]*olxcdn\.com\/v1\/files\/[^"'\s\\<>]+?\/image(?:;[^"'\s\\<>]*)?/gi),
-    ];
-    const seenTokens = new Set();
-    const images = [];
-    for (const m of cdnMatches) {
-      const full = m[0];
-      const base = full.split(";")[0]; // ścieżka bez parametrów rozmiaru
-      if (seenTokens.has(base)) continue;
-      seenTokens.add(base);
-      images.push(base + ";s=1280x0;q=80");
-    }
-    if (images.length > 0) result.images = images;
-  } catch {}
-
-  // Fallback: pojedyncze zdjęcie z og:image, jeśli nic innego nie znaleziono
-  if (result.images.length === 0) {
-    const ogImg = html.match(/<meta property="og:image" content="([^"]*)"/);
-    if (ogImg) result.images = [ogImg[1]];
-  }
-
-  if (!result.description && result.images.length === 0) {
-    result.warnings.push(
-      "Nie udało się wyciągnąć danych z tego ogłoszenia. Sprawdź link lub uzupełnij pola ręcznie."
-    );
-  }
-
-  res.status(200).json(result);
-}
-
-function findAdvertNode(obj, depth = 0) {
-  if (!obj || typeof obj !== "object" || depth > 6) return null;
-  if (obj.make || obj.model || obj.price) return obj;
-  for (const key of Object.keys(obj)) {
-    const found = findAdvertNode(obj[key], depth + 1);
-    if (found) return found;
-  }
-  return null;
-}
-
-// Rekurencyjnie zbiera pary klucz/wartość z tablic obiektów typu
-// {key|name: "...", value|values|localizedValue: "..."} znalezionych
-// w dowolnym miejscu drzewa JSON. Klucze są normalizowane do małych liter.
-function collectKeyValuePairs(node, map, depth = 0) {
-  if (!node || typeof node !== "object" || depth > 10) return;
-  if (Array.isArray(node)) {
-    for (const item of node) {
-      if (item && typeof item === "object" && !Array.isArray(item)) {
-        const k = item.key || item.name || item.parameterKey || item.label;
-        const v = item.value ?? item.values ?? item.localizedValue ?? item.displayValue;
-        if (k && v !== undefined && v !== null) {
-          const kk = String(k).toLowerCase().trim();
-          if (!(kk in map)) {
-            map[kk] = Array.isArray(v) ? v.join(", ") : String(v);
-          }
-        }
-      }
-      collectKeyValuePairs(item, map, depth + 1);
-    }
-  } else {
-    for (const key of Object.keys(node)) {
-      collectKeyValuePairs(node[key], map, depth + 1);
-    }
-  }
-}
-
-function pickParam(map, candidateKeys) {
-  for (const c of candidateKeys) {
-    if (map[c] !== undefined) return map[c];
-  }
-  // dopasowanie częściowe (np. klucz zawiera "rok" albo "paliwo")
-  for (const key of Object.keys(map)) {
-    for (const c of candidateKeys) {
-      if (key.includes(c)) return map[key];
-    }
-  }
-  return "";
-}
-
-// Szuka dowolnego stringa dłuższego niż 40 znaków pod kluczem pasującym
-// do jednej z podanych nazw (np. "description", "opis").
-function findLongTextField(node, keyNames, depth = 0) {
-  if (!node || typeof node !== "object" || depth > 10) return null;
-  if (!Array.isArray(node)) {
-    for (const key of Object.keys(node)) {
-      if (
-        keyNames.some((k) => key.toLowerCase() === k) &&
-        typeof node[key] === "string" &&
-        node[key].length > 40
-      ) {
-        return node[key];
-      }
-    }
-  }
-  const items = Array.isArray(node) ? node : Object.values(node);
-  for (const item of items) {
-    const found = findLongTextField(item, keyNames, depth + 1);
-    if (found) return found;
-  }
-  return null;
-}
-
-function stripHtml(str) {
-  return str.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function decodeHtmlEntities(str) {
-  return str
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
 }
