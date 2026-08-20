@@ -555,12 +555,40 @@
   .btn-outline-lg:hover{background:var(--black);color:var(--white);}
   .car-detail-desc{margin-top:40px;font-size:15px;line-height:1.7;color:#333;}
   .car-detail-desc h2{font-size:20px;margin-bottom:16px;}
-  .car-detail-desc p{white-space:pre-line;}
+  .car-detail-desc p{white-space:pre-line;margin-bottom:14px;}
   .car-notfound{padding:120px 0;text-align:center;}
   .car-notfound h1{font-size:28px;margin-bottom:16px;}
+  /* NAJWAŻNIEJSZE - pasek ikon ze skrótem parametrów */
+  .car-icons-row{display:grid;grid-template-columns:repeat(3,1fr);gap:24px 16px;margin:20px 0 4px;padding:20px 0;border-top:1px solid rgba(0,0,0,0.08);border-bottom:1px solid rgba(0,0,0,0.08);}
+  .car-icon-item{display:flex;flex-direction:column;align-items:center;text-align:center;}
+  .car-icon-item svg{width:24px;height:24px;margin-bottom:8px;stroke:var(--black);fill:none;stroke-width:1.6;}
+  .car-icon-value{font-size:13px;font-weight:600;}
+  .car-icon-label{font-size:11px;color:var(--gray);margin-top:2px;}
+  /* OPIS - sformatowana treść (nagłówki + listy z ogłoszenia) */
+  .car-desc-heading{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--red);margin:24px 0 8px;}
+  .car-desc-heading:first-child{margin-top:0;}
+  .car-desc-subheading{font-size:14px;font-weight:600;color:var(--black);margin:16px 0 6px;}
+  .car-desc-list{margin:0 0 14px;padding-left:20px;}
+  .car-desc-list li{margin-bottom:4px;}
+  .car-desc-more{display:inline-block;margin-top:4px;font-size:13px;font-weight:600;color:var(--red);cursor:pointer;text-transform:uppercase;letter-spacing:0.04em;}
+  .car-desc-body.collapsed{max-height:260px;overflow:hidden;position:relative;-webkit-mask-image:linear-gradient(to bottom, black 65%, transparent 100%);mask-image:linear-gradient(to bottom, black 65%, transparent 100%);}
+  /* WYPOSAŻENIE - listy pobrane z ogłoszenia producenta */
+  .car-equipment-list{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;}
+  .car-equipment-list li{position:relative;padding-left:18px;font-size:14px;line-height:1.5;}
+  .car-equipment-list li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--red);}
+  .car-equipment-body.collapsed{max-height:260px;overflow:hidden;position:relative;-webkit-mask-image:linear-gradient(to bottom, black 65%, transparent 100%);mask-image:linear-gradient(to bottom, black 65%, transparent 100%);}
+  @media(max-width:700px){ .car-equipment-list{grid-template-columns:1fr;} }
+  /* SZCZEGÓŁY - sekcje ze szczegółowymi danymi */
+  .car-section-title{font-size:22px;margin:48px 0 20px;}
+  .car-subsection{margin-bottom:32px;}
+  .car-subsection-title{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--gray);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid rgba(0,0,0,0.08);}
+  .car-detail-table{display:grid;grid-template-columns:1fr 1fr;gap:12px 20px;}
   @media(max-width:900px){
     .car-detail-grid{grid-template-columns:1fr;gap:28px;}
     .page-hero{padding:56px 0 72px;}
+    .car-icons-row{gap:14px;}
+    .car-icon-item{min-width:60px;}
+    .car-detail-table{grid-template-columns:1fr;}
   }
 </style>
 </head>
@@ -571,13 +599,13 @@
     <ul class="nav-links">
       <li><a href="sprzedaz.html">Sprzedaż</a></li>
       <li><a href="/porownywarka-ofert">Porównywarka&nbsp;ofert</a></li>
-      <li><a href="#wynajem">Wynajem</a></li>
-      <li><a href="#finansowanie">Finansowanie</a></li>
-      <li><a href="#ubezpieczenia">Ubezpieczenia</a></li>
-      <li><a href="#kontakt">Kontakt</a></li>
+      <li><a href="wynajem.html">Wynajem</a></li>
+      <li><a href="finansowanie.html">Finansowanie</a></li>
+      <li><a href="ubezpieczenia.html">Ubezpieczenia</a></li>
+      <li><a href="kontakt.html">Kontakt</a></li>
     </ul>
     <div class="nav-cta">
-      <a href="#" class="btn-outline" id="clientLoginBtn">Moje konto</a>
+      <a href="konto.html" class="btn-outline" id="clientLoginBtn">Moje konto</a>
       <a href="tel:+48690846006" class="btn-red">Zadzwoń do doradcy</a>
     </div>
     <button class="menu-toggle">&#9776;</button>
@@ -647,16 +675,16 @@
         <h4>Usługi</h4>
         <ul>
           <li><a href="sprzedaz.html">Sprzedaż aut</a></li>
-          <li><a href="#wynajem">Wynajem</a></li>
-          <li><a href="#finansowanie">Finansowanie</a></li>
-          <li><a href="#ubezpieczenia">Ubezpieczenia</a></li>
+          <li><a href="wynajem.html">Wynajem</a></li>
+          <li><a href="finansowanie.html">Finansowanie</a></li>
+          <li><a href="ubezpieczenia.html">Ubezpieczenia</a></li>
         </ul>
       </div>
       <div class="footer-col">
         <h4>Firma</h4>
         <ul>
           <li><a href="/o-nas">O nas</a></li>
-          <li><a href="#">Kontakt</a></li>
+          <li><a href="kontakt.html">Kontakt</a></li>
           <li><a href="#">Panel CRM</a></li>
         </ul>
       </div>
@@ -691,11 +719,6 @@
     // Hidden admin dot
     document.getElementById('adminDot').addEventListener('click', function(){
       openModal('adminLoginModal');
-    });
-    // Client login button
-    document.getElementById('clientLoginBtn').addEventListener('click', function(e){
-      e.preventDefault();
-      openModal('clientLoginModal');
     });
     // Close buttons
     document.querySelectorAll('.auth-close').forEach(function(btn){
@@ -757,14 +780,114 @@
       d.textContent = (s === null || s === undefined) ? '' : String(s);
       return d.innerHTML;
     }
-    function carPhotos(car){
-      if(Array.isArray(car.photos) && car.photos.length){
-        return car.photos.filter(Boolean);
+    // Import z OTOMOTO zapisuje galerię zdjęć jako tekst z zakodowaną tablicą
+    // JSON (kolumna "image_urls", a czasem też "photos") - a nie jako
+    // prawdziwą tablicę Postgresa - dlatego trzeba to sparsować ręcznie.
+    function safeJsonArray(raw){
+      if(!raw) return [];
+      if(Array.isArray(raw)) return raw;
+      try{
+        var parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      }catch(e){
+        return [];
       }
-      if(car.image_url) return [car.image_url];
-      return [];
     }
-    function specRow(label, value){
+    function carPhotos(car){
+      var fromUrls = safeJsonArray(car.image_urls).filter(Boolean);
+      var list = fromUrls.length ? fromUrls : safeJsonArray(car.photos).filter(Boolean);
+      if(!list.length && car.image_url) list = [car.image_url];
+      // Ostatnie zdjęcie w źródłowych danych to zwykle powielona grafika
+      // promocyjna/powiększenie, a nie osobne zdjęcie auta - pomijamy je.
+      if(list.length > 1) list = list.slice(0, -1);
+      return list;
+    }
+    // Ikony do paska "Najważniejsze" (proste, jednokolorowe SVG, bez zależności od zewnętrznej biblioteki)
+    var CAR_ICONS = {
+      mileage: '<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"></circle><path d="M12 13l4-4M12 5v2M4.5 8.5l1.4 1.4M19.5 8.5l-1.4 1.4"></path></svg>',
+      fuel: '<svg viewBox="0 0 24 24"><path d="M4 21V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14"></path><path d="M4 11h10"></path><path d="M16 8l2.5 2.5V17a1.5 1.5 0 0 0 3 0v-6l-2-2"></path><path d="M2 21h16"></path></svg>',
+      gearbox: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.2 2.2M16.2 16.2l2.2 2.2M5.6 18.4l2.2-2.2M16.2 7.8l2.2-2.2"></path></svg>',
+      body: '<svg viewBox="0 0 24 24"><path d="M3 16v-3l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v3"></path><path d="M3 16h18"></path><circle cx="7.5" cy="17.5" r="1.5"></circle><circle cx="16.5" cy="17.5" r="1.5"></circle></svg>',
+      engine: '<svg viewBox="0 0 24 24"><rect x="4" y="9" width="7" height="8" rx="1"></rect><path d="M11 12h3l3-3h2v6h-2l-3-3"></path><path d="M7 9V6M9 9V6"></path></svg>',
+      power: '<svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"></path></svg>'
+    };
+    function iconItem(key, value, label){
+      if(value === null || value === undefined || value === '') return '';
+      return '' +
+        '<div class="car-icon-item">' + CAR_ICONS[key] +
+          '<div class="car-icon-value">' + esc(value) + '</div>' +
+          '<div class="car-icon-label">' + esc(label) + '</div>' +
+        '</div>';
+    }
+    // Rozbija surowy, sklejony myślnikami opis z importu OTOMOTO na czytelne
+    // sekcje. Prawdziwe dane z importu wyglądają tak:
+    // - sekcje są rozdzielone długimi liniami myślników ("---...---")
+    // - nagłówki to krótkie frazy kończące się dwukropkiem (np. "Lakier i
+    //   tapicerka :") albo pojedyncze słowa-kategorie (np. "Komfort")
+    // - pojedyncze punkty czasem zaczynają się od "●" (może się zdarzyć też "•")
+    // - CAŁE kategorie wyposażenia (Komfort, Ładowanie, Systemy multimedialne,
+    //   Systemy wspomagające kierowcę, Reflektory) bywają sklejone w JEDEN
+    //   fragment bez żadnego rozdzielacza między nimi - dlatego dodatkowo
+    //   szukamy tych słów-kategorii W ŚRODKU fragmentu i dzielimy po nich.
+    // - w obrębie takiego sklejonego fragmentu pozycje wyposażenia mają kody
+    //   w stylu Audi (np. "9AU", "7AL", "GA1") - używamy tego wzorca, żeby
+    //   rozbić długi ciąg na osobne punkty listy.
+    var DESC_HEADING_WORDS = ['Komfort','Ładowanie','Systemy multimedialne','Systemy wspomagające kierowcę','Reflektory','Wybrane wyposażenie','Bezpieczeństwo','Osiągi','Wnętrze','Lakier i tapicerka','Wyposażenie standardowe'];
+    var CATEGORY_WORDS = ['Komfort','Ładowanie','Systemy multimedialne','Systemy wspomagające kierowcę','Reflektory','Bezpieczeństwo','Osiągi','Wnętrze'];
+    function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+    // Kategorię traktujemy jako nagłówek tylko, gdy zaraz po niej występuje
+    // wzorzec kodu katalogowego (np. "Reflektory 9TF Diody...") - to odróżnia
+    // prawdziwe nagłówki kategorii od przypadków, gdy słowo-kategoria jest
+    // częścią nazwy własnej wyposażenia (np. "8IY Reflektory Matrix LED").
+    var CATEGORY_SPLIT_RE = new RegExp('(' + CATEGORY_WORDS.map(escapeRegExp).join('|') + ')(?=\\s[0-9A-Z]{2,4}\\s[A-ZĄĆĘŁŃÓŚŹŻ0-9])', 'g');
+    // Rozbija długi, niesklejony ciąg wyposażenia na punkty listy, korzystając
+    // z wzorca krótkich kodów katalogowych (2-4 znaki, litery+cyfry) tuż przed
+    // kolejną pozycją zaczynającą się wielką literą.
+    var EQUIPMENT_CODE_SPLIT_RE = /\s(?=[0-9A-Z]{2,4}\s[A-ZĄĆĘŁŃÓŚŹŻ])/g;
+    function bulletizeEquipment(text){
+      var items = text.split(EQUIPMENT_CODE_SPLIT_RE).map(function(s){ return s.trim(); }).filter(Boolean);
+      if(items.length < 2) return '<p>' + esc(text.trim()) + '</p>';
+      return '<ul class="car-desc-list">' + items.map(function(i){ return '<li>' + esc(i) + '</li>'; }).join('') + '</ul>';
+    }
+    function parseDescription(raw){
+      if(!raw) return '';
+      var fragments = raw.split(/\s*-{3,}\s*/).map(function(s){ return s.trim(); }).filter(Boolean);
+      var html = '';
+      fragments.forEach(function(fragment){
+        var withoutColon = fragment.replace(/\s*:$/,'').trim();
+        var isHeading = (fragment.length < 60 && /:$/.test(fragment)) || DESC_HEADING_WORDS.indexOf(withoutColon) !== -1;
+        if(isHeading){
+          html += '<h4 class="car-desc-heading">' + esc(withoutColon) + '</h4>';
+          return;
+        }
+        if(/[•●]/.test(fragment)){
+          var chunks = fragment.split(/[•●]/);
+          var lead = chunks.shift().trim();
+          if(lead) html += '<p>' + esc(lead) + '</p>';
+          var bullets = chunks.map(function(c){ return c.trim(); }).filter(Boolean);
+          if(bullets.length){
+            html += '<ul class="car-desc-list">' + bullets.map(function(b){ return '<li>' + esc(b) + '</li>'; }).join('') + '</ul>';
+          }
+          return;
+        }
+        CATEGORY_SPLIT_RE.lastIndex = 0;
+        if(CATEGORY_SPLIT_RE.test(fragment)){
+          CATEGORY_SPLIT_RE.lastIndex = 0;
+          var parts = fragment.split(CATEGORY_SPLIT_RE).map(function(s){ return s.trim(); }).filter(Boolean);
+          parts.forEach(function(p){
+            if(CATEGORY_WORDS.indexOf(p) !== -1){
+              html += '<h5 class="car-desc-subheading">' + esc(p) + '</h5>';
+            } else {
+              html += bulletizeEquipment(p);
+            }
+          });
+          return;
+        }
+        html += '<p>' + esc(fragment) + '</p>';
+      });
+      return html;
+    }
+    function detailRow(label, value){
       if(value === null || value === undefined || value === '') return '';
       return '' +
         '<div>' +
@@ -789,21 +912,71 @@
       var monthly = formatPrice(car.monthly_payment);
       var priceHtml = (price ? price : 'Cena na zapytanie') +
         (monthly ? '<small>lub ' + monthly + ' / mies.</small>' : '');
-      var specs = [
-        specRow('Rok produkcji', car.year),
-        specRow('Typ nadwozia', car.body_type),
-        specRow('Przebieg', car.mileage ? (new Intl.NumberFormat('pl-PL').format(car.mileage) + ' km') : ''),
-        specRow('Paliwo', car.fuel_type),
-        specRow('Skrzynia biegów', car.gearbox),
-        specRow('Pojemność silnika', car.engine_capacity),
-        specRow('Moc', car.power ? (car.power + ' KM') : ''),
-        specRow('Kolor', car.color)
+      // Pasek "Najważniejsze" - skrót najważniejszych parametrów z ikonami
+      var iconsRow = [
+        iconItem('mileage', car.mileage ? (new Intl.NumberFormat('pl-PL').format(car.mileage) + ' km') : '', 'Przebieg'),
+        iconItem('fuel', car.fuel_type, 'Rodzaj paliwa'),
+        iconItem('gearbox', car.gearbox, 'Skrzynia biegów'),
+        iconItem('body', car.body_type, 'Typ nadwozia'),
+        iconItem('engine', car.engine_capacity, 'Pojemność skokowa'),
+        iconItem('power', car.power ? (car.power + ' KM') : '', 'Moc')
       ].filter(Boolean).join('');
-      var descHtml = car.description
-        ? '<div class="car-detail-desc"><h2>Opis</h2><p>' + esc(car.description) + '</p></div>'
+      // "Szczegóły" - Podstawowe + Stan i historia
+      var basicRows = [
+        detailRow('Marka pojazdu', car.brand),
+        detailRow('Model pojazdu', car.model),
+        detailRow('Kolor', car.color),
+        detailRow('Liczba drzwi', car.doors),
+        detailRow('Liczba miejsc', car.seats),
+        detailRow('Rok produkcji', car.year),
+        detailRow('Napęd', car.drivetrain),
+        detailRow('Tapicerka', car.upholstery),
+        detailRow('Lokalizacja pojazdu', car.location)
+      ].filter(Boolean).join('');
+      var historyRows = [
+        detailRow('Przebieg', car.mileage ? (new Intl.NumberFormat('pl-PL').format(car.mileage) + ' km') : ''),
+        detailRow('Stan', car.condition),
+        detailRow('Bezwypadkowy', car.accident_free === true ? 'Tak' : (car.accident_free === false ? 'Nie' : ''))
+      ].filter(Boolean).join('');
+      var detailsHtml = (basicRows || historyRows)
+        ? '' +
+          '<h2 class="car-section-title">Szczegóły</h2>' +
+          (basicRows ? '<div class="car-subsection"><div class="car-subsection-title">Podstawowe</div><div class="car-detail-table">' + basicRows + '</div></div>' : '') +
+          (historyRows ? '<div class="car-subsection"><div class="car-subsection-title">Stan i historia</div><div class="car-detail-table">' + historyRows + '</div></div>' : '')
         : '';
-      var listingBtn = car.listing_url
-        ? '<a href="' + esc(car.listing_url) + '" target="_blank" rel="noopener" class="btn-outline-lg">Zobacz ogłoszenie</a>'
+      // Sekcja "Wyposażenie" - listy pobrane z ogłoszenia producenta
+      // (kolumny equipment_optional / equipment_standard w tabeli "cars").
+      // Jeśli auto ich nie ma (np. starsze wpisy albo import z OTOMOTO),
+      // sekcja po prostu się nie pokazuje - nic się nie psuje.
+      function equipmentList(items, title){
+        if(!Array.isArray(items) || items.length === 0) return '';
+        return '' +
+          '<div class="car-subsection">' +
+            '<div class="car-subsection-title">' + esc(title) + '</div>' +
+            '<ul class="car-equipment-list">' +
+              items.map(function(it){ return '<li>' + esc(it) + '</li>'; }).join('') +
+            '</ul>' +
+          '</div>';
+      }
+      var equipOptional = equipmentList(car.equipment_optional, 'Wyposażenie dodatkowe');
+      var equipStandard = equipmentList(car.equipment_standard, 'Wybrane wyposażenie standardowe');
+      var equipmentHtml = (equipOptional || equipStandard)
+        ? '' +
+          '<h2 class="car-section-title">Wyposażenie</h2>' +
+          '<div class="car-equipment-body collapsed" id="carEquipBody">' + equipOptional + equipStandard + '</div>' +
+          '<span class="car-desc-more" id="carEquipToggle">Rozwiń wyposażenie &#9660;</span>'
+        : '';
+
+      var descParsed = parseDescription(car.description);
+      var descHtml = descParsed
+        ? '<div class="car-detail-desc"><h2>Opis</h2><div class="car-desc-body collapsed" id="carDescBody">' + descParsed + '</div><span class="car-desc-more" id="carDescToggle">Rozwiń opis &#9660;</span></div>'
+        : '';
+      // Import z OTOMOTO zapisuje link do ogłoszenia w kolumnie "source_url"
+      // (kolumna "listing_url" zostaje jako zapasowa, gdyby ktoś kiedyś
+      // wpisywał dane ręcznie pod tą nazwą).
+      var listingHref = car.source_url || car.listing_url;
+      var listingBtn = listingHref
+        ? '<a href="' + esc(listingHref) + '" target="_blank" rel="noopener" class="btn-outline-lg">Zobacz ogłoszenie</a>'
         : '';
       root.innerHTML = '' +
         '<div class="car-detail-grid">' +
@@ -812,14 +985,16 @@
             '<span class="car-title-eyebrow">' + esc(car.body_type || 'Oferta') + '</span>' +
             '<h1>' + esc((car.brand||'') + ' ' + (car.model||'')) + '</h1>' +
             '<div class="car-detail-price">' + priceHtml + '</div>' +
-            '<div class="car-specs">' + specs + '</div>' +
+            '<div class="car-icons-row">' + iconsRow + '</div>' +
             '<div class="car-detail-actions">' +
               '<a href="tel:+48690846006" class="btn-red-lg">Zadzwoń do doradcy</a>' +
               listingBtn +
             '</div>' +
           '</div>' +
         '</div>' +
-        descHtml;
+        descHtml +
+        detailsHtml +
+        equipmentHtml;
       var thumbs = root.querySelectorAll('.car-gallery-thumbs img');
       thumbs.forEach(function(thumb){
         thumb.addEventListener('click', function(){
@@ -828,6 +1003,22 @@
           thumb.classList.add('active');
         });
       });
+      var descToggle = document.getElementById('carDescToggle');
+      if(descToggle){
+        descToggle.addEventListener('click', function(){
+          var body = document.getElementById('carDescBody');
+          var collapsed = body.classList.toggle('collapsed');
+          descToggle.innerHTML = collapsed ? 'Rozwiń opis &#9660;' : 'Zwiń opis &#9650;';
+        });
+      }
+      var equipToggle = document.getElementById('carEquipToggle');
+      if(equipToggle){
+        equipToggle.addEventListener('click', function(){
+          var body = document.getElementById('carEquipBody');
+          var collapsed = body.classList.toggle('collapsed');
+          equipToggle.innerHTML = collapsed ? 'Rozwiń wyposażenie &#9660;' : 'Zwiń wyposażenie &#9650;';
+        });
+      }
     }
     function renderNotFound(){
       document.getElementById('carDetailContent').innerHTML = '' +
