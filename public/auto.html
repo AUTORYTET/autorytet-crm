@@ -572,6 +572,12 @@
   .car-desc-list li{margin-bottom:4px;}
   .car-desc-more{display:inline-block;margin-top:4px;font-size:13px;font-weight:600;color:var(--red);cursor:pointer;text-transform:uppercase;letter-spacing:0.04em;}
   .car-desc-body.collapsed{max-height:260px;overflow:hidden;position:relative;-webkit-mask-image:linear-gradient(to bottom, black 65%, transparent 100%);mask-image:linear-gradient(to bottom, black 65%, transparent 100%);}
+  /* WYPOSAŻENIE - listy pobrane z ogłoszenia producenta */
+  .car-equipment-list{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;}
+  .car-equipment-list li{position:relative;padding-left:18px;font-size:14px;line-height:1.5;}
+  .car-equipment-list li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--red);}
+  .car-equipment-body.collapsed{max-height:260px;overflow:hidden;position:relative;-webkit-mask-image:linear-gradient(to bottom, black 65%, transparent 100%);mask-image:linear-gradient(to bottom, black 65%, transparent 100%);}
+  @media(max-width:700px){ .car-equipment-list{grid-template-columns:1fr;} }
   /* SZCZEGÓŁY - sekcje ze szczegółowymi danymi */
   .car-section-title{font-size:22px;margin:48px 0 20px;}
   .car-subsection{margin-bottom:32px;}
@@ -922,7 +928,10 @@
         detailRow('Kolor', car.color),
         detailRow('Liczba drzwi', car.doors),
         detailRow('Liczba miejsc', car.seats),
-        detailRow('Rok produkcji', car.year)
+        detailRow('Rok produkcji', car.year),
+        detailRow('Napęd', car.drivetrain),
+        detailRow('Tapicerka', car.upholstery),
+        detailRow('Lokalizacja pojazdu', car.location)
       ].filter(Boolean).join('');
       var historyRows = [
         detailRow('Przebieg', car.mileage ? (new Intl.NumberFormat('pl-PL').format(car.mileage) + ' km') : ''),
@@ -935,6 +944,29 @@
           (basicRows ? '<div class="car-subsection"><div class="car-subsection-title">Podstawowe</div><div class="car-detail-table">' + basicRows + '</div></div>' : '') +
           (historyRows ? '<div class="car-subsection"><div class="car-subsection-title">Stan i historia</div><div class="car-detail-table">' + historyRows + '</div></div>' : '')
         : '';
+      // Sekcja "Wyposażenie" - listy pobrane z ogłoszenia producenta
+      // (kolumny equipment_optional / equipment_standard w tabeli "cars").
+      // Jeśli auto ich nie ma (np. starsze wpisy albo import z OTOMOTO),
+      // sekcja po prostu się nie pokazuje - nic się nie psuje.
+      function equipmentList(items, title){
+        if(!Array.isArray(items) || items.length === 0) return '';
+        return '' +
+          '<div class="car-subsection">' +
+            '<div class="car-subsection-title">' + esc(title) + '</div>' +
+            '<ul class="car-equipment-list">' +
+              items.map(function(it){ return '<li>' + esc(it) + '</li>'; }).join('') +
+            '</ul>' +
+          '</div>';
+      }
+      var equipOptional = equipmentList(car.equipment_optional, 'Wyposażenie dodatkowe');
+      var equipStandard = equipmentList(car.equipment_standard, 'Wybrane wyposażenie standardowe');
+      var equipmentHtml = (equipOptional || equipStandard)
+        ? '' +
+          '<h2 class="car-section-title">Wyposażenie</h2>' +
+          '<div class="car-equipment-body collapsed" id="carEquipBody">' + equipOptional + equipStandard + '</div>' +
+          '<span class="car-desc-more" id="carEquipToggle">Rozwiń wyposażenie &#9660;</span>'
+        : '';
+
       var descParsed = parseDescription(car.description);
       var descHtml = descParsed
         ? '<div class="car-detail-desc"><h2>Opis</h2><div class="car-desc-body collapsed" id="carDescBody">' + descParsed + '</div><span class="car-desc-more" id="carDescToggle">Rozwiń opis &#9660;</span></div>'
@@ -961,7 +993,8 @@
           '</div>' +
         '</div>' +
         descHtml +
-        detailsHtml;
+        detailsHtml +
+        equipmentHtml;
       var thumbs = root.querySelectorAll('.car-gallery-thumbs img');
       thumbs.forEach(function(thumb){
         thumb.addEventListener('click', function(){
@@ -976,6 +1009,14 @@
           var body = document.getElementById('carDescBody');
           var collapsed = body.classList.toggle('collapsed');
           descToggle.innerHTML = collapsed ? 'Rozwiń opis &#9660;' : 'Zwiń opis &#9650;';
+        });
+      }
+      var equipToggle = document.getElementById('carEquipToggle');
+      if(equipToggle){
+        equipToggle.addEventListener('click', function(){
+          var body = document.getElementById('carEquipBody');
+          var collapsed = body.classList.toggle('collapsed');
+          equipToggle.innerHTML = collapsed ? 'Rozwiń wyposażenie &#9660;' : 'Zwiń wyposażenie &#9650;';
         });
       }
     }
