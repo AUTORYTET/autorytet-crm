@@ -236,21 +236,58 @@ function extractModelYear(texts) {
 }
 
 // Blok "Najważniejsze cechy pojazdu" to lista wartości bez etykiet (etykiety
-// są tam ikonkami), więc rozpoznajemy je po samej treści.
+// są tam ikonkami), więc rozpoznajemy je po samej treści. Te wartości trafiają
+// potem na podstronę auta na autorytet.com.pl - do paska parametrów pod ceną.
 function extractKeyFeatures(texts) {
   const marker = texts.findIndex((t) => /Najważniejsze cechy pojazdu/i.test(t));
-  if (marker < 0) return {};
-  const slice = texts.slice(marker, Math.min(texts.length, marker + 40));
-  const out = {};
-  for (const raw of slice) {
-    const t = String(raw).trim();
-    if (!out.fuelType && /^(Benzyna|Diesel|Elektryczny|Hybryda|Hybrydowy|Plug-in hybrid.*)$/i.test(t)) out.fuelType = t;
-    else if (!out.power && /^\d+\s*kW\s*\(\s*\d+\s*KM\s*\)$/i.test(t)) out.power = t;
-    else if (!out.gearbox && /^(Automatyczna|Manualna|Automatyczna skrzynia biegów)$/i.test(t)) out.gearbox = t;
-    else if (!out.drivetrain && /quattro|napęd na/i.test(t)) out.drivetrain = t;
+  const out = { chips: [] };
+  if (marker >= 0) {
+    // Blok kończy się na "Numer identyfikacyjny" - dalej są już inne sekcje.
+    let end = texts.findIndex((t, i) => i > marker && /^Numer identyfikacyjny/i.test(String(t).trim()));
+    if (end < 0) end = Math.min(texts.length, marker + 40);
+    const slice = texts.slice(marker + 1, end);
+
+    for (const raw of slice) {
+      const t = String(raw).trim();
+      if (!t) continue;
+      out.chips.push(t);
+      if (!out.fuelType && /^(Benzyna|Diesel|Elektryczny|Hybryda|Hybrydowy|Plug-in hybrid.*)$/i.test(t)) out.fuelType = t;
+      else if (!out.power && /^\d+\s*kW\s*\(\s*\d+\s*KM\s*\)$/i.test(t)) out.power = t;
+      else if (!out.gearbox && /^(Automatyczna|Manualna|Automatyczna skrzynia biegów)$/i.test(t)) out.gearbox = t;
+      else if (!out.drivetrain && /quattro|napęd na/i.test(t)) out.drivetrain = t;
+      else if (!out.paint && /^Lakier\b/i.test(t)) out.paint = t;
+      else if (!out.upholstery && /^(Skóra|Tkanina|Alcantara|Materiał)\b/i.test(t)) out.upholstery = t;
+      else if (!out.upholsteryColor && /szew|-szew/i.test(t)) out.upholsteryColor = t;
+    }
   }
   const locIdx = texts.findIndex((t) => /^Lokalizacja pojazdu:?$/i.test(String(t).trim()));
   if (locIdx >= 0 && texts[locIdx + 1]) out.location = String(texts[locIdx + 1]).trim();
+  return out;
+}
+
+// Wyposażenie ze zbioru kafelków na dole strony ("Wyposażenie dodatkowe" oraz
+// "Wybrane wyposażenie standardowe"). Każdy kafelek to nazwa pozycji, a zaraz
+// po niej link "Więcej informacji" - i właśnie ten link jest tu znacznikiem,
+// po którym bezbłędnie rozpoznajemy, że poprzedni fragment to nazwa
+// wyposażenia, a nie przypadkowy tekst ze strony.
+function extractEquipment(texts) {
+  const out = { optional: [], standard: [] };
+  let current = null;
+  for (let i = 0; i < texts.length; i++) {
+    const t = String(texts[i]).trim();
+
+    if (/^Wyposażenie dodatkowe$/i.test(t)) { current = "optional"; continue; }
+    if (/wyposażenie standardowe$/i.test(t)) { current = "standard"; continue; }
+    // Wejście w inną zakładkę kończy zbieranie.
+    if (/^(Dane techniczne|Dane o zużyciu i emisji)$/i.test(t)) { current = null; continue; }
+    if (!current) continue;
+    if (/^Więcej informacji$/i.test(t)) continue;
+
+    const next = String(texts[i + 1] || "").trim();
+    if (/^Więcej informacji$/i.test(next) && t.length > 2) {
+      if (!out[current].includes(t)) out[current].push(t);
+    }
+  }
   return out;
 }
 
@@ -474,6 +511,7 @@ async function buildImportResult({ texts, imageUrls, title, sourceUrl, debug }) 
   const warnings = [];
   const fields = extractLabelValuePairs(texts);
   const features = extractKeyFeatures(texts);
+  const equipment = extractEquipment(texts);
   // Wartości z bloku "Najważniejsze cechy" uzupełniają to, czego nie udało
   // się znaleźć po etykietach (nie nadpisują danych z etykiet).
   for (const k of ["fuelType", "power", "gearbox", "drivetrain"]) {
@@ -553,6 +591,11 @@ async function buildImportResult({ texts, imageUrls, title, sourceUrl, debug }) 
     );
   }
 
+  // "Moc" na podstronie auta doklejamy do liczby napis " KM", więc do bazy
+  // zapisujemy samą liczbę koni mechanicznych (np. "507"), a pełny zapis
+  // "373 kW (507 KM)" zostaje w opisie.
+  const powerKm = (String(fields.power || "").match(/(\d+)\s*KM/i) || [])[1] || null;
+
   return {
     brand: "Audi",
     model,
@@ -563,6 +606,17 @@ async function buildImportResult({ texts, imageUrls, title, sourceUrl, debug }) 
     description: buildDescription(fields),
     images: processedImages,
     sourceUrl: sourceUrl || null,
+    // Parametry pokazywane na podstronie auta (pasek pod ceną + "Szczegóły")
+    fuelType: fields.fuelType || null,
+    gearbox: fields.gearbox || null,
+    power: powerKm,
+    engineCapacity: fields.engineCapacity || null,
+    color: features.paint || fields.color || null,
+    drivetrain: fields.drivetrain || null,
+    upholstery: [features.upholstery, features.upholsteryColor].filter(Boolean).join(", ") || null,
+    location: fields.location || null,
+    equipmentOptional: equipment.optional,
+    equipmentStandard: equipment.standard,
     warnings,
   };
 }
