@@ -631,6 +631,17 @@ function vehicleFromDb(row) {
     imageUrl: row.image_url || "",
     imageUrls: Array.isArray(row.photos) ? row.photos : [],
     sourceUrl: row.listing_url || "",
+    // Parametry i wyposażenie pokazywane na podstronie auta (auto.html)
+    fuelType: row.fuel_type || "",
+    gearbox: row.gearbox || "",
+    power: row.power || "",
+    engineCapacity: row.engine_capacity || "",
+    color: row.color || "",
+    drivetrain: row.drivetrain || "",
+    upholstery: row.upholstery || "",
+    location: row.location || "",
+    equipmentOptional: Array.isArray(row.equipment_optional) ? row.equipment_optional : [],
+    equipmentStandard: Array.isArray(row.equipment_standard) ? row.equipment_standard : [],
     createdAt: row.created_at,
   };
 }
@@ -647,6 +658,16 @@ function vehicleToDb(v) {
     image_url: v.imageUrl || null,
     photos: v.imageUrls && v.imageUrls.length ? v.imageUrls : null,
     listing_url: v.sourceUrl || null,
+    fuel_type: v.fuelType || null,
+    gearbox: v.gearbox || null,
+    power: v.power || null,
+    engine_capacity: v.engineCapacity || null,
+    color: v.color || null,
+    drivetrain: v.drivetrain || null,
+    upholstery: v.upholstery || null,
+    location: v.location || null,
+    equipment_optional: v.equipmentOptional && v.equipmentOptional.length ? v.equipmentOptional : null,
+    equipment_standard: v.equipmentStandard && v.equipmentStandard.length ? v.equipmentStandard : null,
   };
 }
 
@@ -3694,6 +3715,9 @@ function VehicleFormModal({ initial, onClose, onSave }) {
     brand: "", model: "", year: "", price: "", monthlyPayment: "",
     bodyType: BODY_TYPES[0], description: "", status: "dostepny",
     imageUrl: "", imageUrls: [], sourceUrl: "",
+    fuelType: "", gearbox: "", power: "", engineCapacity: "", color: "",
+    drivetrain: "", upholstery: "", location: "",
+    equipmentOptional: [], equipmentStandard: [],
   });
   const setField = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const setVal = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
@@ -3740,6 +3764,21 @@ function VehicleFormModal({ initial, onClose, onSave }) {
         description: data.description || f.description,
         imageUrl: (data.images && data.images[0]) || f.imageUrl,
         imageUrls: data.images && data.images.length ? data.images : f.imageUrls,
+        // Parametry i wyposażenie z ogłoszenia (trafiają na podstronę auta).
+        // Wszędzie "|| f.xxx", żeby import nigdy nie kasował tego, co już
+        // wpisałeś ręcznie - uzupełnia tylko puste miejsca.
+        fuelType: data.fuelType || f.fuelType,
+        gearbox: data.gearbox || f.gearbox,
+        power: data.power || f.power,
+        engineCapacity: data.engineCapacity || f.engineCapacity,
+        color: data.color || f.color,
+        drivetrain: data.drivetrain || f.drivetrain,
+        upholstery: data.upholstery || f.upholstery,
+        location: data.location || f.location,
+        equipmentOptional:
+          data.equipmentOptional && data.equipmentOptional.length ? data.equipmentOptional : f.equipmentOptional,
+        equipmentStandard:
+          data.equipmentStandard && data.equipmentStandard.length ? data.equipmentStandard : f.equipmentStandard,
         sourceUrl: data.sourceUrl || importUrl.trim(),
       }));
       setImportWarnings(data.warnings || []);
@@ -3828,6 +3867,21 @@ function VehicleFormModal({ initial, onClose, onSave }) {
         description: data.description || f.description,
         imageUrl: (data.images && data.images[0]) || f.imageUrl,
         imageUrls: data.images && data.images.length ? data.images : f.imageUrls,
+        // Parametry i wyposażenie z ogłoszenia (trafiają na podstronę auta).
+        // Wszędzie "|| f.xxx", żeby import nigdy nie kasował tego, co już
+        // wpisałeś ręcznie - uzupełnia tylko puste miejsca.
+        fuelType: data.fuelType || f.fuelType,
+        gearbox: data.gearbox || f.gearbox,
+        power: data.power || f.power,
+        engineCapacity: data.engineCapacity || f.engineCapacity,
+        color: data.color || f.color,
+        drivetrain: data.drivetrain || f.drivetrain,
+        upholstery: data.upholstery || f.upholstery,
+        location: data.location || f.location,
+        equipmentOptional:
+          data.equipmentOptional && data.equipmentOptional.length ? data.equipmentOptional : f.equipmentOptional,
+        equipmentStandard:
+          data.equipmentStandard && data.equipmentStandard.length ? data.equipmentStandard : f.equipmentStandard,
         sourceUrl: data.sourceUrl || f.sourceUrl,
       }));
       if (data.sourceUrl && !importUrl.trim()) setImportUrl(data.sourceUrl);
@@ -3960,6 +4014,61 @@ function VehicleFormModal({ initial, onClose, onSave }) {
               onChange={setField("description")}
               rows={3}
               style={{ ...S.input, resize: "vertical", fontFamily: "inherit" }}
+            />
+          </div>
+
+          {/* Parametry pokazywane na podstronie auta na autorytet.com.pl —
+              w pasku pod ceną oraz w sekcji "Szczegóły". Wypełniają się same
+              przy imporcie, ale możesz je tu poprawić przed zapisem. */}
+          <div style={{ gridColumn: "1 / -1", borderTop: "1px solid #E7E5E2", paddingTop: 14, marginTop: 4 }}>
+            <div style={{ ...S.cardTitle, fontSize: 13 }}>Parametry pojazdu</div>
+            <div style={{ fontSize: 11.5, color: "#9A9A9A", marginTop: 3 }}>
+              Pokazują się na stronie oferty, w pasku pod ceną.
+            </div>
+          </div>
+          <Field label="Rodzaj paliwa" value={form.fuelType} onChange={setVal("fuelType")} />
+          <Field label="Skrzynia biegów" value={form.gearbox} onChange={setVal("gearbox")} />
+          <Field label="Moc (KM)" value={form.power} onChange={setVal("power")} />
+          <Field label="Pojemność skokowa" value={form.engineCapacity} onChange={setVal("engineCapacity")} />
+          <Field label="Kolor / lakier" value={form.color} onChange={setVal("color")} />
+          <Field label="Napęd" value={form.drivetrain} onChange={setVal("drivetrain")} />
+          <Field label="Tapicerka" value={form.upholstery} onChange={setVal("upholstery")} />
+          <Field label="Lokalizacja pojazdu" value={form.location} onChange={setVal("location")} />
+
+          {/* Wyposażenie — jedna pozycja w każdej linii. Tak samo wyświetla
+              się potem na podstronie auta. */}
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={S.label}>
+              Wyposażenie dodatkowe{form.equipmentOptional.length ? ` (${form.equipmentOptional.length})` : ""}
+            </div>
+            <textarea
+              value={form.equipmentOptional.join("\n")}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  equipmentOptional: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean),
+                }))
+              }
+              rows={4}
+              placeholder="Jedna pozycja w każdej linii"
+              style={{ ...S.input, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
+            />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={S.label}>
+              Wyposażenie standardowe{form.equipmentStandard.length ? ` (${form.equipmentStandard.length})` : ""}
+            </div>
+            <textarea
+              value={form.equipmentStandard.join("\n")}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  equipmentStandard: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean),
+                }))
+              }
+              rows={4}
+              placeholder="Jedna pozycja w każdej linii"
+              style={{ ...S.input, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
             />
           </div>
         </div>
