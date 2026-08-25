@@ -1548,8 +1548,11 @@ export default function CRM({ user, profile, onLogout }) {
               deals={deals}
               tasks={upcomingTasks}
               goals={goals}
+              currentUserId={user.id}
               onOpenCompany={openCompany}
               onOpenDeal={(id) => { openDeal(id); setTab("companies"); }}
+              onToggleTask={(task) => upsertTask({ ...task, done: !task.done })}
+              onGoToTasks={() => setTab("tasks")}
             />
           )}
 
@@ -1838,7 +1841,220 @@ function computeAssistantSuggestions(deal, company, activities = []) {
 }
 
 /* ---------- Dashboard ---------- */
-function Dashboard({ companies, deals, tasks, goals, onOpenCompany, onOpenDeal }) {
+/* ---------- Pulpit: panel zaplanowanych zadań ----------------------------
+   Lista zadań do zrobienia, od NAJSTARSZEGO terminu do najnowszego, żeby to,
+   co zaległe, samo pchało się na wierzch. Zadania po terminie są na czerwono.
+   Zadanie odhacza się jednym kliknięciem w kółko po lewej - bez wchodzenia w
+   kartę klienta - żeby nic nie stało na drodze do "odhaczenia i jedziemy
+   dalej". Zadania bez terminu lądują na końcu listy (nie na początku, jak
+   wyszłoby przy zwykłym sortowaniu po dacie).                              */
+const TASK_PANEL_FILTERS = [
+  { key: "all", label: "Wszystkie" },
+  { key: "overdue", label: "Spóźnione" },
+  { key: "today", label: "Dziś" },
+  { key: "tomorrow", label: "Jutro" },
+];
+
+function shortDate(d) {
+  if (!d) return "bez terminu";
+  try {
+    return new Date(d).toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
+  } catch (e) {
+    return String(d);
+  }
+}
+
+function TaskReminderPanel({ tasks, currentUserId, onToggleTask, onOpenDeal, onOpenCompany, onGoToTasks }) {
+  const [filter, setFilter] = useState("all");
+  const [onlyMine, setOnlyMine] = useState(true);
+
+  const scoped = useMemo(
+    () => tasks.filter((t) => !t.done && (!onlyMine || t.ownerId === currentUserId)),
+    [tasks, onlyMine, currentUserId]
+  );
+
+  const sorted = useMemo(() => {
+    return [...scoped].sort((a, b) => {
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1; // bez terminu - na koniec
+      if (!b.dueDate) return -1;
+      return new Date(a.dueDate) - new Date(b.dueDate);
+    });
+  }, [scoped]);
+
+  const overdue = sorted.filter((t) => t.days !== null && t.days < 0);
+  const todayList = sorted.filter((t) => t.days === 0);
+  const tomorrowList = sorted.filter((t) => t.days === 1);
+  const undatedCount = sorted.filter((t) => !t.dueDate).length;
+
+  const visible =
+    filter === "overdue" ? overdue :
+    filter === "today" ? todayList :
+    filter === "tomorrow" ? tomorrowList :
+    sorted;
+
+  const now = new Date();
+  const headline =
+    todayList.length === 0
+      ? "Brak zadań na dziś"
+      : `${todayList.length} ${todayList.length === 1 ? "zadanie" : todayList.length < 5 ? "zadania" : "zadań"} na dziś`;
+
+  const counterFor = (key) =>
+    key === "overdue" ? overdue.length :
+    key === "today" ? todayList.length :
+    key === "tomorrow" ? tomorrowList.length :
+    sorted.length;
+
+  return (
+    <section style={{ ...S.card, padding: 0, overflow: "hidden" }}>
+      {/* Nagłówek z dzisiejszą datą i podsumowaniem zaległości */}
+      <div style={{ background: "#111111", color: "#fff", padding: "16px 20px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ lineHeight: 1 }}>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 34, fontWeight: 600 }}>
+            {now.toLocaleDateString("pl-PL", { day: "numeric" })}
+          </div>
+          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: "#B7B5B1", marginTop: 2 }}>
+            {now.toLocaleDateString("pl-PL", { month: "short" })}
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 17, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>
+            {headline}
+          </div>
+          <div style={{ fontSize: 12, color: "#B7B5B1", marginTop: 4 }}>
+            {overdue.length > 0 && (
+              <span style={{ color: "#FF6A62", fontWeight: 700 }}>Spóźnione: {overdue.length}</span>
+            )}
+            {overdue.length > 0 && undatedCount > 0 && <span> · </span>}
+            {undatedCount > 0 && <span>bez terminu: {undatedCount}</span>}
+            {overdue.length === 0 && undatedCount === 0 && <span>Wszystko na bieżąco.</span>}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOnlyMine((v) => !v)}
+          style={{
+            background: "rgba(255,255,255,0.12)", color: "#fff", border: "none", borderRadius: 8,
+            padding: "7px 12px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
+          }}
+          title="Przełącz między swoimi zadaniami a zadaniami całego zespołu"
+        >
+          {onlyMine ? "Moje zadania" : "Cały zespół"}
+        </button>
+      </div>
+
+      {/* Zakładki */}
+      <div style={{ display: "flex", gap: 4, padding: "10px 14px 0", flexWrap: "wrap", borderBottom: "1px solid #E7E5E2" }}>
+        {TASK_PANEL_FILTERS.map((f) => {
+          const active = filter === f.key;
+          const count = counterFor(f.key);
+          const isOverdue = f.key === "overdue" && count > 0;
+          return (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setFilter(f.key)}
+              style={{
+                background: "none", border: "none", padding: "8px 10px 10px", fontSize: 12.5,
+                fontWeight: active ? 700 : 500,
+                color: isOverdue && !active ? "#E4241B" : active ? "#111111" : "#6B6B6B",
+                borderBottom: active ? "2px solid #E4241B" : "2px solid transparent",
+              }}
+            >
+              {f.label}
+              {count > 0 && (
+                <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 700, color: isOverdue ? "#E4241B" : "#9A9A9A" }}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Lista zadań */}
+      {visible.length === 0 ? (
+        <div style={{ padding: "22px 20px" }}>
+          <EmptyNote
+            text={
+              filter === "overdue"
+                ? "Brak zaległych zadań — dobra robota."
+                : onlyMine
+                ? "Brak zaplanowanych zadań. Przełącz na „Cały zespół”, żeby zobaczyć pozostałe."
+                : "Brak zaplanowanych zadań."
+            }
+          />
+        </div>
+      ) : (
+        <div style={{ maxHeight: 340, overflowY: "auto" }}>
+          {visible.map((t) => {
+            const Icon = TASK_TYPES[t.type]?.icon || Bell;
+            const isOverdue = t.days !== null && t.days < 0;
+            const isToday = t.days === 0;
+            return (
+              <div
+                key={t.id}
+                className="hoverRow"
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 14px",
+                  borderBottom: "1px solid #F0EFEC",
+                  background: isOverdue ? "#FDF3F2" : "transparent",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => onToggleTask(t)}
+                  title="Oznacz jako zrobione"
+                  style={{ background: "none", border: "none", display: "flex", padding: 0, marginTop: 1 }}
+                >
+                  <Circle size={17} color={isOverdue ? "#E4241B" : "#B7B5B1"} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => (t.dealId ? onOpenDeal(t.dealId) : onOpenCompany(t.clientId))}
+                  style={{ flex: 1, background: "none", border: "none", textAlign: "left", padding: 0, minWidth: 0 }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <Icon size={12.5} color={isOverdue ? "#E4241B" : "#6B6B6B"} />
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: isOverdue ? "#E4241B" : "#6B6B6B" }}>
+                      {TASK_TYPES[t.type]?.label || "Zadanie"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2, color: "#111111" }}>{t.title}</div>
+                  <div style={{ fontSize: 11.5, color: "#9A9A9A", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {t.companyName}{t.dealName ? " · " + t.dealName : ""}
+                    {!onlyMine && t.ownerName ? " · " + t.ownerName : ""}
+                  </div>
+                </button>
+
+                <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: isOverdue ? "#E4241B" : isToday ? "#111111" : "#6B6B6B" }}>
+                    {shortDate(t.dueDate)}
+                  </div>
+                  {isOverdue && (
+                    <div style={{ fontSize: 10.5, color: "#E4241B", fontWeight: 600 }}>
+                      {Math.abs(t.days)} {Math.abs(t.days) === 1 ? "dzień" : "dni"} po terminie
+                    </div>
+                  )}
+                  {isToday && <div style={{ fontSize: 10.5, color: "#9A9A9A", fontWeight: 600 }}>dziś</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ padding: "10px 14px", display: "flex", justifyContent: "flex-end" }}>
+        <button type="button" onClick={onGoToTasks} style={{ ...S.secondaryBtn, fontSize: 12 }}>
+          Przejdź do Zadań
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function Dashboard({ companies, deals, tasks, goals, currentUserId, onOpenCompany, onOpenDeal, onToggleTask, onGoToTasks }) {
   const urgent = tasks.filter((t) => t.days !== null && t.days <= 2);
   const openDeals = deals.filter((d) => d.status === "otwarta");
   const totalOpenBudget = openDeals.reduce((sum, d) => sum + (Number(d.budget) || 0), 0);
@@ -1870,6 +2086,17 @@ function Dashboard({ companies, deals, tasks, goals, onOpenCompany, onOpenDeal }
 
   return (
     <div style={S.stack}>
+      {/* Zaplanowane zadania - celowo na samej górze Pulpitu, żeby zaległe
+          czynności rzucały się w oczy zaraz po wejściu do CRM. */}
+      <TaskReminderPanel
+        tasks={tasks}
+        currentUserId={currentUserId}
+        onToggleTask={onToggleTask}
+        onOpenDeal={onOpenDeal}
+        onOpenCompany={onOpenCompany}
+        onGoToTasks={onGoToTasks}
+      />
+
       <section style={S.card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10 }}>
           <h3 style={S.cardTitle}>Twoje statystyki</h3>
