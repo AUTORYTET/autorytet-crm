@@ -2,9 +2,13 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient.js";
 import AuthScreen from "./AuthScreen.jsx";
 import CRM from "./CRM.jsx";
+import ClientAccount from "./ClientAccount.jsx";
 
-// Role, które mają prawo wejść do CRM. Konta klientów (rola "client")
-// zakładane w panelu „Moje konto" na stronie NIE mają tu wstępu.
+// Ta sama aplikacja obsługuje dwa adresy: /crm (panel pracownika) i /konto
+// (panel klienta) — oba wskazują w vercel.json na crm.html. O tym, co komu
+// pokazać, decyduje ROLA z tabeli profiles, a nie adres w przeglądarce.
+// Dzięki temu klient nie zobaczy CRM nawet wpisując /crm z palca, a pracownik
+// nie utknie w panelu klienta.
 const ROLE_PRACOWNIKA = ["admin", "doradca"];
 
 export default function App() {
@@ -27,7 +31,6 @@ export default function App() {
       return;
     }
     (async () => {
-      setProfileLoaded(false);
       const { data } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
       setProfile(data || null);
       setProfileLoaded(true);
@@ -58,19 +61,19 @@ export default function App() {
     return (
       <BrakDostepu
         tytul="Konto niekompletne"
-        opis="To konto nie ma jeszcze profilu w systemie. Skontaktuj się z administratorem CRM."
+        opis="To konto nie ma jeszcze profilu w systemie. Skontaktuj się z administratorem."
         email={session.user.email}
       />
     );
   }
 
-  // Bramka ról: do CRM wchodzi wyłącznie pracownik.
+  // Klient (oraz każda rola spoza zespołu) – panel klienta, nie CRM.
   if (!ROLE_PRACOWNIKA.includes(profile.role)) {
     return (
-      <BrakDostepu
-        tytul="Brak dostępu do CRM"
-        opis="To konto ma uprawnienia klienta. Panel CRM jest dostępny wyłącznie dla pracowników Autorytet."
-        email={session.user.email}
+      <ClientAccount
+        user={session.user}
+        profile={profile}
+        onLogout={() => supabase.auth.signOut()}
       />
     );
   }

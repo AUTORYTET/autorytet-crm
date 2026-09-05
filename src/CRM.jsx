@@ -5237,7 +5237,6 @@ function RoleErrorNote({ text }) {
 function TeamGoalsSettingsPanel({ user, goals, onUpdateGoals }) {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [roleMsg, setRoleMsg] = useState("");
   const [goalsForm, setGoalsForm] = useState(goals);
   const [savingGoals, setSavingGoals] = useState(false);
 
@@ -5251,26 +5250,6 @@ function TeamGoalsSettingsPanel({ user, goals, onUpdateGoals }) {
   }, []);
 
   useEffect(() => { loadStaff(); }, [loadStaff]);
-
-  const changeRole = async (id, role) => {
-    setRoleMsg("");
-    // .select() zwraca zmieniony wiersz. Jeśli baza odrzuci zmianę (brak
-    // uprawnień), dostaniemy pustą tablicę zamiast błędu — dlatego
-    // sprawdzamy oba przypadki. Wcześniej zmiana roli potrafiła "przejść"
-    // tylko w interfejsie, a w bazie nie zapisywało się nic.
-    const { data, error } = await supabase.from("profiles").update({ role }).eq("id", id).select();
-    if (error || !data || data.length === 0) {
-      setRoleMsg(
-        "Nie udało się zmienić roli. " +
-          (error?.message ||
-            "Baza odrzuciła zmianę — rolę może zmieniać wyłącznie konto administratora.") +
-          " Lista poniżej pokazuje stan rzeczywisty z bazy."
-      );
-      await loadStaff();
-      return;
-    }
-    setStaff((prev) => prev.map((p) => (p.id === id ? { ...p, ...data[0] } : p)));
-  };
 
   async function saveGoals(e) {
     e.preventDefault();
@@ -5321,29 +5300,22 @@ function TeamGoalsSettingsPanel({ user, goals, onUpdateGoals }) {
           <EmptyNote text="Brak kont w systemie." />
         ) : (
           <div>
-            <RoleErrorNote text={roleMsg} />
+            <div style={{ background: "#F7F7F5", border: "1px solid #E7E5E2", borderRadius: 8, padding: "9px 12px", fontSize: 12.5, color: "#6B6B6B", marginBottom: 12, lineHeight: 1.5 }}>
+              Lista tylko do wglądu. Role nadaje się w jednym miejscu — Ustawienia CRM →
+              Użytkownicy → Zespół — i każda zmiana wymaga tam potwierdzenia hasłem.
+            </div>
             <div style={S.tableHeader}>
               <span style={{ flex: 2 }}>Osoba</span>
               <span style={{ flex: 1.4 }}>Rola</span>
             </div>
-            {staff.map((p) => (
+            {staff.filter((p) => p.role === "admin" || p.role === "doradca").map((p) => (
               <div key={p.id} style={S.tableRow}>
                 <span style={{ flex: 2, textAlign: "left" }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5 }}>{p.full_name || "—"}</div>
-                  <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{p.id}</div>
+                  <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{p.email || p.id}</div>
                 </span>
-                <span style={{ flex: 1.4, textAlign: "left" }}>
-                  <select
-                    value={p.role || ""}
-                    onChange={(e) => changeRole(p.id, e.target.value)}
-                    style={S.select}
-                    disabled={p.id === user.id}
-                  >
-                    <UnknownRoleOption role={p.role} />
-                    <option value="admin">Administrator</option>
-                    <option value="doradca">Doradca</option>
-                    <option value="client">Klient</option>
-                  </select>
+                <span style={{ flex: 1.4, textAlign: "left", fontSize: 13 }}>
+                  {ROLE_ETYKIETY[p.role] || p.role}
                 </span>
               </div>
             ))}
@@ -5390,11 +5362,88 @@ function SubTabs({ tabs, active, onChange }) {
 }
 
 /* ---------- Ustawienia CRM -> Użytkownicy ---------- */
+const ROLE_ETYKIETY = { admin: "Administrator", doradca: "Doradca", client: "Klient" };
+
+/* Okno proszące o hasło administratora. Chroni przed sytuacją, w której ktoś
+   siada do niezablokowanego komputera z otwartym CRM i nadaje sobie dostęp. */
+function PasswordConfirmModal({ open, tytul, opis, email, onCancel, onConfirm }) {
+  const [haslo, setHaslo] = useState("");
+  const [blad, setBlad] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (open) { setHaslo(""); setBlad(""); setBusy(false); }
+  }, [open]);
+
+  if (!open) return null;
+
+  async function potwierdz(e) {
+    e.preventDefault();
+    setBusy(true);
+    setBlad("");
+    // Weryfikacja hasła to zwykłe logowanie tym samym kontem. Nieudana próba
+    // niczego nie psuje — bieżąca sesja zostaje nietknięta.
+    const { error } = await supabase.auth.signInWithPassword({ email, password: haslo });
+    if (error) {
+      setBlad("Nieprawidłowe hasło. Spróbuj jeszcze raz.");
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    onConfirm();
+  }
+
+  return (
+    <div style={S.modalOverlay}>
+      <div style={{ ...S.modal, maxWidth: 420 }}>
+        <div style={S.cardTitle}>{tytul}</div>
+        <div style={{ fontSize: 12.5, color: "#6B6B6B", marginTop: 8, lineHeight: 1.55 }}>{opis}</div>
+        <form onSubmit={potwierdz} style={{ marginTop: 18 }}>
+          <div style={S.label}>Twoje hasło do CRM</div>
+          <input
+            type="password"
+            value={haslo}
+            onChange={(e) => setHaslo(e.target.value)}
+            style={{ ...S.input, marginTop: 6 }}
+            autoFocus
+            required
+          />
+          {blad && (
+            <div style={{ color: "#E4241B", fontSize: 12.5, marginTop: 8 }}>{blad}</div>
+          )}
+          <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+            <button type="button" onClick={onCancel} style={{ ...S.secondaryBtn, flex: 1 }}>
+              Anuluj
+            </button>
+            <button type="submit" disabled={busy} style={{ ...S.primaryBtn, flex: 1, opacity: busy ? 0.6 : 1 }}>
+              {busy ? "Sprawdzam…" : "Potwierdź"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function OsobaWiersz({ p, prawa }) {
+  return (
+    <div style={S.tableRow}>
+      <span style={{ flex: 2, textAlign: "left" }}>
+        <div style={{ fontWeight: 700, fontSize: 13.5 }}>{p.full_name || "—"}</div>
+        <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{p.email || p.id}</div>
+      </span>
+      <span style={{ flex: 1.4, textAlign: "left" }}>{prawa}</span>
+    </div>
+  );
+}
+
 function OrgUsersSettingsPanel({ user }) {
-  const [subTab, setSubTab] = useState("users");
+  const [subTab, setSubTab] = useState("team");
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [roleMsg, setRoleMsg] = useState("");
+  const [okMsg, setOkMsg] = useState("");
+  const [potwierdzenie, setPotwierdzenie] = useState(null);
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -5405,8 +5454,13 @@ function OrgUsersSettingsPanel({ user }) {
 
   useEffect(() => { loadStaff(); }, [loadStaff]);
 
-  const changeRole = async (id, role) => {
+  const zespol = staff.filter((p) => p.role === "admin" || p.role === "doradca");
+  const klienci = staff.filter((p) => p.role === "client");
+  const nieznani = staff.filter((p) => !["admin", "doradca", "client"].includes(p.role || ""));
+
+  const zapiszRole = async (id, role) => {
     setRoleMsg("");
+    setOkMsg("");
     // .select() zwraca zmieniony wiersz. Jeśli baza odrzuci zmianę (brak
     // uprawnień), dostaniemy pustą tablicę zamiast błędu — dlatego
     // sprawdzamy oba przypadki. Wcześniej zmiana roli potrafiła "przejść"
@@ -5423,52 +5477,156 @@ function OrgUsersSettingsPanel({ user }) {
       return;
     }
     setStaff((prev) => prev.map((p) => (p.id === id ? { ...p, ...data[0] } : p)));
+    setOkMsg("Zapisano. Nowa rola działa od razu — bez ponownego logowania.");
+  };
+
+  const zmienRole = (p, nowaRola) => {
+    if (!nowaRola || nowaRola === p.role) return;
+    const kto = p.full_name || p.email || p.id;
+    setPotwierdzenie({
+      tytul: nowaRola === "client" ? "Odebranie dostępu do CRM" : "Zmiana roli pracownika",
+      opis:
+        nowaRola === "client"
+          ? `${kto} straci dostęp do CRM i przestanie widzieć dane sprzedażowe. Potwierdź swoim hasłem.`
+          : `${kto} otrzyma rolę „${ROLE_ETYKIETY[nowaRola]}" i dostęp do danych CRM. Potwierdź swoim hasłem.`,
+      onOk: () => zapiszRole(p.id, nowaRola),
+    });
   };
 
   return (
     <div style={S.stack}>
+      <PasswordConfirmModal
+        open={!!potwierdzenie}
+        tytul={potwierdzenie?.tytul || ""}
+        opis={potwierdzenie?.opis || ""}
+        email={user.email}
+        onCancel={() => setPotwierdzenie(null)}
+        onConfirm={() => {
+          const akcja = potwierdzenie?.onOk;
+          setPotwierdzenie(null);
+          if (akcja) akcja();
+        }}
+      />
+
       <SubTabs
-        tabs={[{ key: "users", label: "Użytkownicy" }, { key: "roles", label: "Role" }, { key: "invites", label: "Zaproszenia" }]}
+        tabs={[
+          { key: "team", label: "Zespół" },
+          { key: "clients", label: "Klienci" },
+          { key: "roles", label: "Role" },
+          { key: "invites", label: "Zaproszenia" },
+        ]}
         active={subTab}
         onChange={setSubTab}
       />
 
-      {subTab === "users" && (
+      {subTab === "team" && (
         <div style={S.card}>
-          <div style={S.cardTitle}>Użytkownicy CRM</div>
+          <div style={S.cardTitle}>Zespół z dostępem do CRM</div>
           <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
-            Wszystkie konta z dostępem do tego CRM. Rolę zmieniasz bezpośrednio na liście.
+            Tylko konta pracowników. Klienci są na osobnej zakładce obok, żeby nie dało się nadać
+            im dostępu przez pomyłkę. Każda zmiana roli wymaga potwierdzenia Twoim hasłem.
           </div>
+          <RoleErrorNote text={roleMsg} />
+          {okMsg && (
+            <div style={{ background: "#EAF7EE", border: "1px solid #BFE3CB", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, color: "#1E6B36", marginBottom: 12 }}>
+              {okMsg}
+            </div>
+          )}
           {loading ? (
             <div style={{ fontSize: 13, color: "#9A9A9A" }}>Wczytywanie…</div>
-          ) : staff.length === 0 ? (
-            <EmptyNote text="Brak kont w systemie." />
+          ) : zespol.length === 0 ? (
+            <EmptyNote text="Brak kont pracowników." />
           ) : (
             <div>
-              <RoleErrorNote text={roleMsg} />
               <div style={S.tableHeader}>
                 <span style={{ flex: 2 }}>Osoba</span>
                 <span style={{ flex: 1.4 }}>Rola</span>
               </div>
-              {staff.map((p) => (
-                <div key={p.id} style={S.tableRow}>
-                  <span style={{ flex: 2, textAlign: "left" }}>
-                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>{p.full_name || "—"}</div>
-                    <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{p.email || p.id}</div>
-                  </span>
-                  <span style={{ flex: 1.4, textAlign: "left" }}>
-                    <select value={p.role || ""} onChange={(e) => changeRole(p.id, e.target.value)} style={S.select} disabled={p.id === user.id}>
-                      <UnknownRoleOption role={p.role} />
-                      <option value="admin">Administrator</option>
-                      <option value="doradca">Doradca</option>
-                      <option value="client">Klient</option>
-                    </select>
-                  </span>
-                </div>
+              {zespol.map((p) => (
+                <OsobaWiersz
+                  key={p.id}
+                  p={p}
+                  prawa={
+                    p.id === user.id ? (
+                      <span style={{ fontSize: 13 }}>
+                        {ROLE_ETYKIETY[p.role] || p.role}
+                        <span style={{ color: "#9A9A9A", fontSize: 11.5 }}> — to Ty</span>
+                      </span>
+                    ) : (
+                      <select
+                        value={p.role || ""}
+                        onChange={(e) => zmienRole(p, e.target.value)}
+                        style={S.select}
+                      >
+                        <UnknownRoleOption role={p.role} />
+                        <option value="admin">Administrator</option>
+                        <option value="doradca">Doradca</option>
+                        <option value="client">Odbierz dostęp (Klient)</option>
+                      </select>
+                    )
+                  }
+                />
+              ))}
+            </div>
+          )}
+
+          {nieznani.length > 0 && (
+            <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginTop: 16, lineHeight: 1.5 }}>
+              <b>Konta z nieznaną rolą ({nieznani.length}).</b> W bazie mają wartość spoza listy —
+              nie są ani pracownikami, ani klientami. Ustaw im rolę:
+              <div style={{ marginTop: 10 }}>
+                {nieznani.map((p) => (
+                  <OsobaWiersz
+                    key={p.id}
+                    p={p}
+                    prawa={
+                      <select value={p.role || ""} onChange={(e) => zmienRole(p, e.target.value)} style={S.select}>
+                        <UnknownRoleOption role={p.role} />
+                        <option value="admin">Administrator</option>
+                        <option value="doradca">Doradca</option>
+                        <option value="client">Klient</option>
+                      </select>
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {subTab === "clients" && (
+        <div style={S.card}>
+          <div style={S.cardTitle}>Konta klientów</div>
+          <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16 }}>
+            Osoby, które założyły konto w panelu „Moje konto" na stronie. Nie mają dostępu do CRM
+            ani do danych sprzedażowych. Tej listy celowo nie da się edytować — żeby nadać komuś
+            dostęp do CRM, użyj zakładki „Zaproszenia".
+          </div>
+          {loading ? (
+            <div style={{ fontSize: 13, color: "#9A9A9A" }}>Wczytywanie…</div>
+          ) : klienci.length === 0 ? (
+            <EmptyNote text="Nikt jeszcze nie założył konta klienta." />
+          ) : (
+            <div>
+              <div style={S.tableHeader}>
+                <span style={{ flex: 2 }}>Osoba</span>
+                <span style={{ flex: 1.4 }}>Rola</span>
+              </div>
+              {klienci.map((p) => (
+                <OsobaWiersz
+                  key={p.id}
+                  p={p}
+                  prawa={<span style={{ fontSize: 13, color: "#6B6B6B" }}>Klient</span>}
+                />
               ))}
             </div>
           )}
         </div>
+      )}
+
+      {subTab === "invites" && (
+        <InviteStaffPanel user={user} onCreated={loadStaff} onAskPassword={setPotwierdzenie} />
       )}
 
       {subTab === "roles" && (
@@ -5491,17 +5649,140 @@ function OrgUsersSettingsPanel({ user }) {
         </div>
       )}
 
-      {subTab === "invites" && (
-        <div style={S.card}>
-          <div style={S.cardTitle}>Zaproszenia e-mail</div>
-          <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginTop: 12, marginBottom: 16, lineHeight: 1.5 }}>
-            Wysyłka zaproszeń e-mail wymaga podłączenia serwera pocztowego / uprawnień administracyjnych
-            Supabase (klucz service role), których to okno przeglądarki nie może bezpiecznie przechowywać —
-            dlatego tej funkcji tu jeszcze nie ma. Do czasu jej dodania nowe konta zakłada się ręcznie: w
-            Supabase → Authentication → Users → "Add user", a rolę przypisujesz w zakładce "Użytkownicy" obok.
+    </div>
+  );
+}
+
+/* ---------- Ustawienia CRM -> Użytkownicy -> Zaproszenia ---------- */
+/* Zakładanie konta wymaga klucza service_role, którego okno przeglądarki nie
+   może bezpiecznie przechowywać. Dlatego robi to funkcja serwerowa na Vercel
+   (/api/team-access), która osobno sprawdza, czy proszący jest administratorem. */
+function InviteStaffPanel({ user, onCreated, onAskPassword }) {
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [role, setRole] = useState("doradca");
+  const [busy, setBusy] = useState(false);
+  const [blad, setBlad] = useState("");
+  const [wynik, setWynik] = useState(null);
+
+  async function zaloz() {
+    setBusy(true);
+    setBlad("");
+    setWynik(null);
+    try {
+      const { data: sesja } = await supabase.auth.getSession();
+      const token = sesja?.session?.access_token;
+      if (!token) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
+
+      const odp = await fetch("/api/team-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ action: "create", email, fullName, role }),
+      });
+      const dane = await odp.json().catch(() => ({}));
+      if (!odp.ok) throw new Error(dane.error || "Nie udało się założyć konta.");
+
+      setWynik(dane);
+      setEmail("");
+      setFullName("");
+      setRole("doradca");
+      if (onCreated) onCreated();
+    } catch (e) {
+      setBlad(e.message || "Coś poszło nie tak.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function submit(e) {
+    e.preventDefault();
+    const adres = email.trim();
+    if (!adres) return;
+    onAskPassword({
+      tytul: "Założenie konta pracownika",
+      opis: `Powstanie nowe konto ${adres} z rolą „${ROLE_ETYKIETY[role]}" i dostępem do danych CRM. Potwierdź swoim hasłem.`,
+      onOk: zaloz,
+    });
+  }
+
+  return (
+    <div style={S.stack}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Nowe konto pracownika</div>
+        <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+          Zakłada konto z dostępem do CRM i od razu nadaje mu rolę. Zamiast wysyłki e-mail (która
+          wymagałaby podpięcia serwera pocztowego) dostaniesz tutaj hasło tymczasowe — przekaż je
+          tej osobie bezpiecznie, np. telefonicznie.
+        </div>
+
+        <form onSubmit={submit} style={{ display: "grid", gap: 12, maxWidth: 460 }}>
+          <div>
+            <div style={S.label}>Adres e-mail</div>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              style={{ ...S.input, marginTop: 6 }}
+              placeholder="imie.nazwisko@autorytet.com.pl"
+              required
+            />
+          </div>
+          <div>
+            <div style={S.label}>Imię i nazwisko</div>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              style={{ ...S.input, marginTop: 6 }}
+              placeholder="Ewelina Kozłowska"
+            />
+          </div>
+          <div>
+            <div style={S.label}>Rola</div>
+            <select value={role} onChange={(e) => setRole(e.target.value)} style={{ ...S.select, marginTop: 6, width: "100%" }}>
+              <option value="doradca">Doradca</option>
+              <option value="admin">Administrator</option>
+            </select>
+          </div>
+
+          {blad && <div style={{ color: "#E4241B", fontSize: 12.5 }}>{blad}</div>}
+
+          <button type="submit" disabled={busy} style={{ ...S.primaryBtn, opacity: busy ? 0.6 : 1 }}>
+            {busy ? "Zakładam konto…" : "Załóż konto pracownika"}
+          </button>
+        </form>
+      </div>
+
+      {wynik && (
+        <div style={{ ...S.card, borderColor: "#BFE3CB", background: "#F6FCF8" }}>
+          <div style={S.cardTitle}>Konto gotowe</div>
+          <div style={{ fontSize: 13, marginTop: 10, lineHeight: 1.6 }}>
+            <div><b>Login:</b> {wynik.email}</div>
+            <div><b>Rola:</b> {ROLE_ETYKIETY[wynik.role] || wynik.role}</div>
+            <div style={{ marginTop: 10 }}><b>Hasło tymczasowe:</b></div>
+            <div
+              style={{
+                fontFamily: "monospace", fontSize: 16, letterSpacing: 1, background: "#fff",
+                border: "1px solid #E7E5E2", borderRadius: 8, padding: "10px 12px", marginTop: 6,
+                userSelect: "all", wordBreak: "break-all",
+              }}
+            >
+              {wynik.tempPassword}
+            </div>
+            <div style={{ fontSize: 12.5, color: "#6B6B6B", marginTop: 12, lineHeight: 1.55 }}>
+              To hasło pokazuje się <b>tylko teraz</b> — po odświeżeniu strony zniknie i nie da się go
+              odczytać ponownie. Przekaż je tej osobie i poproś, żeby zmieniła je po pierwszym
+              zalogowaniu w Ustawienia → Hasło.
+            </div>
           </div>
         </div>
       )}
+
+      <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5 }}>
+        Konto pracownika zakładaj wyłącznie tutaj. Zakładka „Klienci" celowo nie pozwala nadać
+        dostępu — dzięki temu nie da się przez pomyłkę wpuścić do CRM osoby, która założyła sobie
+        konto w panelu „Moje konto" na stronie.
+      </div>
     </div>
   );
 }

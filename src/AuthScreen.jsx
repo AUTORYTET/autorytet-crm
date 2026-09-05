@@ -1,13 +1,14 @@
 import React, { useState } from "react";
 import { supabase } from "./supabaseClient.js";
+import logo from "./assets/logo.png";
 
+// Logo bierzemy z pliku - tego samego, ktorego uzywa CRM i panel klienta.
+// Wczesniej bylo tu rysowane w kodzie (napis Oswald + czerwone tlo), przez co
+// ekran logowania mial inne logo niz reszta serwisu.
 function Logo() {
   return (
-    <div style={{ display: "flex", fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 30, letterSpacing: 0.5, lineHeight: 1, justifyContent: "center" }}>
-      <span style={{ color: "#111111" }}>AUTO</span>
-      <span style={{ background: "#E4241B", color: "#fff", padding: "2px 8px", marginLeft: 2, transform: "skewX(-8deg)", display: "inline-block" }}>
-        <span style={{ display: "inline-block", transform: "skewX(8deg)" }}>RYTET</span>
-      </span>
+    <div style={{ display: "flex", justifyContent: "center" }}>
+      <img src={logo} alt="AUTORYTET" style={{ height: 40, display: "block" }} />
     </div>
   );
 }
@@ -95,8 +96,9 @@ export default function AuthScreen() {
         </form>
 
         {mode === "register" && (
-          <div style={{ marginTop: 14, fontSize: 11.5, color: "#9A9A9A", textAlign: "center" }}>
-            Pierwsza osoba, która się zarejestruje, automatycznie zostaje administratorem.
+          <div style={{ marginTop: 14, fontSize: 11.5, color: "#9A9A9A", textAlign: "center", lineHeight: 1.5 }}>
+            Rejestracja zakłada konto klienta. Dostęp do CRM nadaje administrator
+            AUTORYTET — nie da się go przyznać sobie samemu.
           </div>
         )}
       </div>
