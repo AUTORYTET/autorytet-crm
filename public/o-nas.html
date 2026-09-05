@@ -881,8 +881,11 @@
       // verify admin role via profiles table
       var userId = result.data.user.id;
       var profile = await sb.from('profiles').select('role').eq('id', userId).single();
-      if(profile.error || !profile.data || profile.data.role !== 'admin'){
-        errEl.textContent = 'Brak uprawnień administratora.';
+      // Do CRM wchodzi caly zespol: administrator i doradca. Konta klientow
+      // (rola 'client', zakladane w panelu "Moje konto") sa tu odrzucane.
+      var rolaOsoby = profile.data ? profile.data.role : null;
+      if(profile.error || !profile.data || (rolaOsoby !== 'admin' && rolaOsoby !== 'doradca')){
+        errEl.textContent = 'To konto nie ma dostępu do CRM.';
         await sb.auth.signOut();
         return;
       }
