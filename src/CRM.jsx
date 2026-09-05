@@ -5200,9 +5200,44 @@ function RegionalSettingsPanel({ regionalSettings, onUpdateUserSettings }) {
 }
 
 /* ---------- Cele i zespół (admin) ---------- */
+/* Pokazuje prawdziwą wartość roli, jeśli w bazie siedzi coś spoza listy
+   (np. stare 'user'). Bez tego przeglądarka wyświetlała pierwszą pozycję
+   z rozwijanego menu i wyglądało to tak, jakby konto miało rolę, której
+   w bazie nigdy nie było. */
+function UnknownRoleOption({ role }) {
+  const znane = ["admin", "doradca", "client"];
+  if (role && znane.includes(role)) return null;
+  return (
+    <option value={role || ""}>
+      {role ? `Nieznana rola: ${role}` : "— brak roli —"}
+    </option>
+  );
+}
+
+function RoleErrorNote({ text }) {
+  if (!text) return null;
+  return (
+    <div
+      style={{
+        background: "#FDECEC",
+        border: "1px solid #F3C4C4",
+        borderRadius: 8,
+        padding: "10px 12px",
+        fontSize: 12.5,
+        lineHeight: 1.5,
+        color: "#8A2020",
+        marginBottom: 12,
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
 function TeamGoalsSettingsPanel({ user, goals, onUpdateGoals }) {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [roleMsg, setRoleMsg] = useState("");
   const [goalsForm, setGoalsForm] = useState(goals);
   const [savingGoals, setSavingGoals] = useState(false);
 
@@ -5218,8 +5253,23 @@ function TeamGoalsSettingsPanel({ user, goals, onUpdateGoals }) {
   useEffect(() => { loadStaff(); }, [loadStaff]);
 
   const changeRole = async (id, role) => {
-    await supabase.from("profiles").update({ role }).eq("id", id);
-    setStaff((prev) => prev.map((p) => (p.id === id ? { ...p, role } : p)));
+    setRoleMsg("");
+    // .select() zwraca zmieniony wiersz. Jeśli baza odrzuci zmianę (brak
+    // uprawnień), dostaniemy pustą tablicę zamiast błędu — dlatego
+    // sprawdzamy oba przypadki. Wcześniej zmiana roli potrafiła "przejść"
+    // tylko w interfejsie, a w bazie nie zapisywało się nic.
+    const { data, error } = await supabase.from("profiles").update({ role }).eq("id", id).select();
+    if (error || !data || data.length === 0) {
+      setRoleMsg(
+        "Nie udało się zmienić roli. " +
+          (error?.message ||
+            "Baza odrzuciła zmianę — rolę może zmieniać wyłącznie konto administratora.") +
+          " Lista poniżej pokazuje stan rzeczywisty z bazy."
+      );
+      await loadStaff();
+      return;
+    }
+    setStaff((prev) => prev.map((p) => (p.id === id ? { ...p, ...data[0] } : p)));
   };
 
   async function saveGoals(e) {
@@ -5271,6 +5321,7 @@ function TeamGoalsSettingsPanel({ user, goals, onUpdateGoals }) {
           <EmptyNote text="Brak kont w systemie." />
         ) : (
           <div>
+            <RoleErrorNote text={roleMsg} />
             <div style={S.tableHeader}>
               <span style={{ flex: 2 }}>Osoba</span>
               <span style={{ flex: 1.4 }}>Rola</span>
@@ -5283,11 +5334,12 @@ function TeamGoalsSettingsPanel({ user, goals, onUpdateGoals }) {
                 </span>
                 <span style={{ flex: 1.4, textAlign: "left" }}>
                   <select
-                    value={p.role}
+                    value={p.role || ""}
                     onChange={(e) => changeRole(p.id, e.target.value)}
                     style={S.select}
                     disabled={p.id === user.id}
                   >
+                    <UnknownRoleOption role={p.role} />
                     <option value="admin">Administrator</option>
                     <option value="doradca">Doradca</option>
                     <option value="client">Klient</option>
@@ -5342,6 +5394,7 @@ function OrgUsersSettingsPanel({ user }) {
   const [subTab, setSubTab] = useState("users");
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [roleMsg, setRoleMsg] = useState("");
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -5353,8 +5406,23 @@ function OrgUsersSettingsPanel({ user }) {
   useEffect(() => { loadStaff(); }, [loadStaff]);
 
   const changeRole = async (id, role) => {
-    await supabase.from("profiles").update({ role }).eq("id", id);
-    setStaff((prev) => prev.map((p) => (p.id === id ? { ...p, role } : p)));
+    setRoleMsg("");
+    // .select() zwraca zmieniony wiersz. Jeśli baza odrzuci zmianę (brak
+    // uprawnień), dostaniemy pustą tablicę zamiast błędu — dlatego
+    // sprawdzamy oba przypadki. Wcześniej zmiana roli potrafiła "przejść"
+    // tylko w interfejsie, a w bazie nie zapisywało się nic.
+    const { data, error } = await supabase.from("profiles").update({ role }).eq("id", id).select();
+    if (error || !data || data.length === 0) {
+      setRoleMsg(
+        "Nie udało się zmienić roli. " +
+          (error?.message ||
+            "Baza odrzuciła zmianę — rolę może zmieniać wyłącznie konto administratora.") +
+          " Lista poniżej pokazuje stan rzeczywisty z bazy."
+      );
+      await loadStaff();
+      return;
+    }
+    setStaff((prev) => prev.map((p) => (p.id === id ? { ...p, ...data[0] } : p)));
   };
 
   return (
@@ -5377,6 +5445,7 @@ function OrgUsersSettingsPanel({ user }) {
             <EmptyNote text="Brak kont w systemie." />
           ) : (
             <div>
+              <RoleErrorNote text={roleMsg} />
               <div style={S.tableHeader}>
                 <span style={{ flex: 2 }}>Osoba</span>
                 <span style={{ flex: 1.4 }}>Rola</span>
@@ -5388,7 +5457,8 @@ function OrgUsersSettingsPanel({ user }) {
                     <div style={{ fontSize: 11.5, color: "#9A9A9A" }}>{p.email || p.id}</div>
                   </span>
                   <span style={{ flex: 1.4, textAlign: "left" }}>
-                    <select value={p.role} onChange={(e) => changeRole(p.id, e.target.value)} style={S.select} disabled={p.id === user.id}>
+                    <select value={p.role || ""} onChange={(e) => changeRole(p.id, e.target.value)} style={S.select} disabled={p.id === user.id}>
+                      <UnknownRoleOption role={p.role} />
                       <option value="admin">Administrator</option>
                       <option value="doradca">Doradca</option>
                       <option value="client">Klient</option>
@@ -5411,7 +5481,7 @@ function OrgUsersSettingsPanel({ user }) {
           {[
             { name: "Administrator", desc: "Pełny dostęp: zarządza użytkownikami i rolami, celami zespołu, katalogami (stanowiska, powody, produkty, koszty) oraz ustawieniami CRM. Może usuwać firmy i szanse sprzedaży innych opiekunów." },
             { name: "Doradca", desc: "Codzienna praca w CRM: firmy, szanse sprzedaży, zadania, kalendarz. Widzi dane całego zespołu (zgodnie z ustawieniami widoczności), ale nie ma dostępu do Ustawień CRM." },
-            { name: "Klient", desc: "Rola przygotowana pod przyszły ograniczony dostęp (np. portal klienta) — obecnie traktowana jak konto bez dostępu do zarządzania CRM." },
+            { name: "Klient", desc: "Konto klienta z panelu „Moje konto\" na stronie. Nie ma wstępu do CRM — po zalogowaniu zobaczy komunikat o braku dostępu. Nie widzi też żadnych danych CRM w bazie: ani szans sprzedaży, ani notatek, ani kosztów. Tę rolę dostaje automatycznie każda osoba rejestrująca się na stronie." },
           ].map((r) => (
             <div key={r.name} style={S.card}>
               <div style={S.cardTitle}>{r.name}</div>
