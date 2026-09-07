@@ -3,7 +3,8 @@ import {
   Phone, Mail, MapPin, Building2, Car, Wallet, CalendarClock, Plus,
   Search, CheckCircle2, Circle, X, LayoutGrid, Users, ListChecks,
   Handshake, Bell, Trash2, ChevronRight, ChevronLeft, LogOut, Loader2, Settings, UserPlus, Edit2,
-  Tag, Pin, Send, Calendar, BarChart3, Package, Link2, Sparkles, Filter, MoreVertical, Download, Menu
+  Tag, Pin, Send, Calendar, BarChart3, Package, Link2, Sparkles, Filter, MoreVertical, Download, Menu,
+  ClipboardCheck
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import logo from "./assets/logo.png";
@@ -1515,6 +1516,7 @@ export default function CRM({ user, profile, onLogout }) {
             <NavBtn active={tab === "tasks"} onClick={() => setTab("tasks")} icon={ListChecks} label="Zadania" />
             <NavBtn active={tab === "deals"} onClick={() => { setTab("deals"); setSelectedDealId(null); }} icon={Handshake} label="Szanse sprzedaży" />
             <NavBtn active={tab === "vehicles"} onClick={() => setTab("vehicles")} icon={Car} label="Pojazdy" />
+            <NavBtn active={tab === "reservations"} onClick={() => setTab("reservations")} icon={ClipboardCheck} label="Rezerwacje" />
             <NavBtn active={tab === "stats"} onClick={() => setTab("stats")} icon={BarChart3} label="Statystyki" />
             <NavBtn active={tab === "settings"} onClick={() => setTab("settings")} icon={Settings} label="Ustawienia" />
           </nav>
@@ -1698,6 +1700,10 @@ export default function CRM({ user, profile, onLogout }) {
               onEdit={(v) => { setEditingVehicle(v); setShowVehicleForm(true); }}
               onDelete={(id) => removeVehicle(id)}
             />
+          )}
+
+          {tab === "reservations" && (
+            <RezerwacjeView user={user} profile={profile} staff={staff} />
           )}
 
           {tab === "stats" && (
@@ -3312,6 +3318,295 @@ function TasksBoard({ tasks, onToggleTask, onDeleteTask, onOpenDeal }) {
   );
 }
 
+
+/* ---------- Rezerwacje ze strony autorytet.com.pl ---------- */
+/* Rezerwacje sklada klient w panelu "Moje konto". Do tej pory zespol
+   dowiadywal sie o nich wylacznie z e-maila, a w bazie nie bylo reguly
+   pozwalajacej cokolwiek w nich zmienic. Ten widok to nadrabia. */
+
+const REZ_STATUSY = [
+  { key: "nowa",                 label: "Nowa",             bg: "#EEF3FB", color: "#2A4B8D" },
+  { key: "oczekuje_na_platnosc", label: "Czeka na opłatę",  bg: "#FFF4E0", color: "#8A5B00" },
+  { key: "oplacona",             label: "Opłacona",         bg: "#EAF7EE", color: "#1E6B36" },
+  { key: "potwierdzona",         label: "Potwierdzona",     bg: "#EAF7EE", color: "#1E6B36" },
+  { key: "anulowana",            label: "Anulowana",        bg: "#F1F1EF", color: "#6B6B6B" },
+  { key: "zwrocona",             label: "Zwrócona",         bg: "#F1F1EF", color: "#6B6B6B" },
+  { key: "zrealizowana",         label: "Zrealizowana",     bg: "#111111", color: "#FFFFFF" },
+];
+const REZ_AKTYWNE = ["nowa", "oczekuje_na_platnosc", "oplacona", "potwierdzona"];
+const REZ_ZAMKNIETE = ["anulowana", "zwrocona", "zrealizowana"];
+
+function rezOpis(status) {
+  const s = REZ_STATUSY.find((x) => x.key === status);
+  return s || { key: status, label: status || "—", bg: "#F1F1EF", color: "#6B6B6B" };
+}
+
+function RezStatusPill({ status }) {
+  const s = rezOpis(status);
+  return (
+    <span style={{
+      background: s.bg, color: s.color, fontSize: 10.5, fontWeight: 700,
+      textTransform: "uppercase", letterSpacing: 0.4, padding: "4px 10px",
+      borderRadius: 999, whiteSpace: "nowrap",
+    }}>
+      {s.label}
+    </span>
+  );
+}
+
+function RezerwacjeView({ user, profile, staff }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filtr, setFiltr] = useState("aktywne");
+  const [szukaj, setSzukaj] = useState("");
+  const [blad, setBlad] = useState("");
+  const [zajety, setZajety] = useState(null);
+  const [notatkaId, setNotatkaId] = useState(null);
+  const [notatkaTekst, setNotatkaTekst] = useState("");
+
+  const wczytaj = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("reservations").select("*").order("created_at", { ascending: false });
+    if (error) {
+      setBlad(
+        "Nie udało się wczytać rezerwacji: " + error.message +
+        ". Jeśli to pierwszy raz — uruchom w Supabase migrację migration_rezerwacje.sql."
+      );
+      setRows([]);
+    } else {
+      setBlad("");
+      setRows(data || []);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { wczytaj(); }, [wczytaj]);
+
+  const osoby = useMemo(() => {
+    const m = {};
+    (staff || []).forEach((p) => { m[p.id] = p; });
+    return m;
+  }, [staff]);
+
+  const pracownicy = useMemo(
+    () => (staff || []).filter((p) => p.role === "admin" || p.role === "doradca"),
+    [staff]
+  );
+
+  async function zapisz(id, zmiany) {
+    setZajety(id);
+    setBlad("");
+    const { data, error } = await supabase
+      .from("reservations").update(zmiany).eq("id", id).select();
+    setZajety(null);
+    if (error || !data || data.length === 0) {
+      setBlad(
+        "Nie udało się zapisać zmiany. " +
+        (error?.message || "Baza odrzuciła zapis — sprawdź, czy migracja rezerwacji została uruchomiona.")
+      );
+      wczytaj();
+      return false;
+    }
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...data[0] } : r)));
+    return true;
+  }
+
+  const licz = (klucze) => rows.filter((r) => klucze.includes(r.status)).length;
+
+  const widoczne = useMemo(() => {
+    let lista = rows;
+    if (filtr === "aktywne") lista = lista.filter((r) => REZ_AKTYWNE.includes(r.status));
+    else if (filtr === "zamkniete") lista = lista.filter((r) => REZ_ZAMKNIETE.includes(r.status));
+    else if (filtr !== "wszystkie") lista = lista.filter((r) => r.status === filtr);
+
+    const q = szukaj.trim().toLowerCase();
+    if (!q) return lista;
+    return lista.filter((r) => {
+      const osoba = osoby[r.user_id];
+      return [
+        r.reservation_number, r.car_brand, r.car_model, r.car_id, r.staff_note,
+        osoba?.email, osoba?.full_name,
+      ].filter(Boolean).join(" ").toLowerCase().includes(q);
+    });
+  }, [rows, filtr, szukaj, osoby]);
+
+  return (
+    <div style={S.stack}>
+      <div style={S.toolbar}>
+        <div style={S.searchBox}>
+          <Search size={15} color="#9A9A9A" />
+          <input
+            style={S.searchInput}
+            placeholder="Szukaj po numerze, kliencie lub aucie…"
+            value={szukaj}
+            onChange={(e) => setSzukaj(e.target.value)}
+          />
+        </div>
+        <button type="button" style={S.secondaryBtn} onClick={wczytaj}>Odśwież</button>
+      </div>
+
+      <SubTabs
+        tabs={[
+          { key: "aktywne",      label: "Do obsługi (" + licz(REZ_AKTYWNE) + ")" },
+          { key: "nowa",         label: "Nowe (" + licz(["nowa"]) + ")" },
+          { key: "potwierdzona", label: "Potwierdzone (" + licz(["potwierdzona"]) + ")" },
+          { key: "zamkniete",    label: "Zamknięte (" + licz(REZ_ZAMKNIETE) + ")" },
+          { key: "wszystkie",    label: "Wszystkie (" + rows.length + ")" },
+        ]}
+        active={filtr}
+        onChange={setFiltr}
+      />
+
+      {blad && (
+        <div style={{
+          background: "#FDECEC", border: "1px solid #F3C4C4", borderRadius: 8,
+          padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5, color: "#8A2020",
+        }}>
+          {blad}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ fontSize: 13, color: "#9A9A9A" }}>Wczytywanie rezerwacji…</div>
+      ) : widoczne.length === 0 ? (
+        <EmptyNote text={rows.length === 0 ? "Nie ma jeszcze żadnych rezerwacji ze strony." : "Nic nie pasuje do tego filtra."} />
+      ) : (
+        widoczne.map((r) => {
+          const osoba = osoby[r.user_id];
+          const zamknieta = REZ_ZAMKNIETE.includes(r.status);
+          const zajeta = zajety === r.id;
+          const cena = r.car_price
+            ? new Intl.NumberFormat("pl-PL").format(r.car_price) + " zł"
+            : "cena na zapytanie";
+          return (
+            <div key={r.id} style={S.card}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <span style={S.cardTitle}>{[r.car_brand, r.car_model].filter(Boolean).join(" ") || "Pojazd"}</span>
+                    <RezStatusPill status={r.status} />
+                  </div>
+                  <div style={{ fontSize: 12, color: "#9A9A9A", marginTop: 5 }}>
+                    {r.reservation_number ? "nr " + r.reservation_number + " · " : ""}
+                    {cena}
+                    {r.discount_percent ? " · rabat -" + r.discount_percent + "%" : ""}
+                    {r.created_at ? " · złożona " + new Date(r.created_at).toLocaleDateString("pl-PL") : ""}
+                  </div>
+                  <div style={{ fontSize: 12.5, marginTop: 8 }}>
+                    <b>Klient:</b>{" "}
+                    {osoba ? (osoba.full_name ? osoba.full_name + " — " : "") + (osoba.email || "") : "konto usunięte lub brak dostępu"}
+                  </div>
+                  {r.status === "anulowana" && (
+                    <div style={{ fontSize: 12, color: "#9A9A9A", marginTop: 4 }}>
+                      Anulowana {r.cancelled_by === "klient" ? "przez klienta" : "przez zespół"}
+                      {r.cancel_reason ? " — " + r.cancel_reason : ""}
+                    </div>
+                  )}
+                  {r.payment_status && r.payment_status !== "brak" && (
+                    <div style={{ fontSize: 12, color: "#9A9A9A", marginTop: 4 }}>
+                      Płatność: {r.payment_status}
+                      {r.payment_amount ? " (" + new Intl.NumberFormat("pl-PL").format(r.payment_amount) + " zł)" : ""}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ minWidth: 190 }}>
+                  <div style={S.label}>Opiekun</div>
+                  <select
+                    style={{ ...S.select, marginTop: 6, width: "100%" }}
+                    value={r.owner_id || ""}
+                    disabled={zajeta}
+                    onChange={(e) => zapisz(r.id, { owner_id: e.target.value || null })}
+                  >
+                    <option value="">— nieprzypisana —</option>
+                    {pracownicy.map((p) => (
+                      <option key={p.id} value={p.id}>{p.full_name || p.email}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {notatkaId === r.id ? (
+                <div style={{ marginTop: 14 }}>
+                  <div style={S.label}>Notatka zespołu</div>
+                  <textarea
+                    style={{ ...S.input, marginTop: 6, minHeight: 74, resize: "vertical", fontFamily: "inherit" }}
+                    value={notatkaTekst}
+                    onChange={(e) => setNotatkaTekst(e.target.value)}
+                    placeholder="Np. dzwoniłam 12.09, auto dostępne, klient prosi o kontakt po 16:00."
+                  />
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button
+                      type="button"
+                      style={S.primaryBtn}
+                      disabled={zajeta}
+                      onClick={async () => {
+                        const ok = await zapisz(r.id, { staff_note: notatkaTekst });
+                        if (ok) setNotatkaId(null);
+                      }}
+                    >
+                      Zapisz notatkę
+                    </button>
+                    <button type="button" style={S.secondaryBtn} onClick={() => setNotatkaId(null)}>Anuluj</button>
+                  </div>
+                </div>
+              ) : (
+                r.staff_note && (
+                  <div style={{
+                    background: "#FAFAF9", border: "1px solid #F0EFEC", borderRadius: 8,
+                    padding: "9px 11px", fontSize: 12.5, lineHeight: 1.5, marginTop: 12, whiteSpace: "pre-wrap",
+                  }}>
+                    {r.staff_note}
+                  </div>
+                )
+              )}
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+                {!zamknieta && r.status !== "potwierdzona" && (
+                  <button type="button" style={S.primaryBtn} disabled={zajeta}
+                    onClick={() => zapisz(r.id, { status: "potwierdzona" })}>
+                    Potwierdź dostępność
+                  </button>
+                )}
+                {(r.status === "potwierdzona" || r.status === "oplacona") && (
+                  <button type="button" style={S.secondaryBtn} disabled={zajeta}
+                    onClick={() => zapisz(r.id, { status: "zrealizowana" })}>
+                    Oznacz jako zrealizowaną
+                  </button>
+                )}
+                {!zamknieta && (
+                  <button type="button" style={S.secondaryBtn} disabled={zajeta}
+                    onClick={() => {
+                      const powod = window.prompt("Powód anulowania (zobaczy go tylko zespół):", "");
+                      if (powod === null) return;
+                      zapisz(r.id, { status: "anulowana", cancel_reason: powod || null });
+                    }}>
+                    Anuluj rezerwację
+                  </button>
+                )}
+                {r.status === "anulowana" && r.payment_status === "oplacona" && (
+                  <button type="button" style={S.secondaryBtn} disabled={zajeta}
+                    onClick={() => zapisz(r.id, { status: "zwrocona", payment_status: "zwrocona", refunded_at: new Date().toISOString() })}>
+                    Oznacz zwrot pieniędzy
+                  </button>
+                )}
+                <button
+                  type="button"
+                  style={S.secondaryBtn}
+                  onClick={() => { setNotatkaId(r.id); setNotatkaTekst(r.staff_note || ""); }}
+                >
+                  {r.staff_note ? "Zmień notatkę" : "Dodaj notatkę"}
+                </button>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 /* ---------- Statystyki ---------- */
 function StatystykiView({ deals, companiesById, products }) {
   const [subTab, setSubTab] = useState("etap");
@@ -4334,6 +4629,7 @@ const ORG_SETTINGS_SECTIONS = [
   { key: "orgForms", label: "Formularze" },
   { key: "orgFiles", label: "Pliki" },
   { key: "orgPlugins", label: "Wtyczki" },
+  { key: "orgReservations", label: "Rezerwacje" },
   { key: "orgWebsiteContent", label: "Treści strony" },
 ];
 
@@ -4444,6 +4740,7 @@ function SettingsPanel({
         )}
         {section === "orgFiles" && isAdmin && <FilesPlaceholderPanel />}
         {section === "orgPlugins" && isAdmin && <PluginsPlaceholderPanel />}
+        {section === "orgReservations" && isAdmin && <OrgReservationsSettingsPanel />}
         {section === "orgWebsiteContent" && isAdmin && <OrgWebsiteContentSettingsPanel />}
         {section === "team" && isAdmin && <TeamGoalsSettingsPanel user={user} goals={goals} onUpdateGoals={onUpdateGoals} />}
       </div>
@@ -5782,6 +6079,172 @@ function InviteStaffPanel({ user, onCreated, onAskPassword }) {
         Konto pracownika zakładaj wyłącznie tutaj. Zakładka „Klienci" celowo nie pozwala nadać
         dostępu — dzięki temu nie da się przez pomyłkę wpuścić do CRM osoby, która założyła sobie
         konto w panelu „Moje konto" na stronie.
+      </div>
+    </div>
+  );
+}
+
+
+/* ---------- Ustawienia CRM -> Rezerwacje ---------- */
+/* To, co tu ustawisz, strona czyta na zywo - koszyk pokazuje te warunki
+   klientowi bez wgrywania czegokolwiek na GitHub. */
+function OrgReservationsSettingsPanel() {
+  const [form, setForm] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [zapisuje, setZapisuje] = useState(false);
+  const [komunikat, setKomunikat] = useState("");
+  const [blad, setBlad] = useState("");
+
+  const wczytaj = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("reservation_settings").select("*").eq("id", 1).maybeSingle();
+    if (error || !data) {
+      setBlad(
+        "Nie udało się wczytać ustawień rezerwacji" + (error ? ": " + error.message : "") +
+        ". Uruchom w Supabase migrację migration_rezerwacje.sql."
+      );
+      setForm(null);
+    } else {
+      setBlad("");
+      setForm(data);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { wczytaj(); }, [wczytaj]);
+
+  function zmien(pole, wartosc) {
+    setForm((f) => ({ ...f, [pole]: wartosc }));
+    setKomunikat("");
+  }
+
+  async function zapisz(e) {
+    e.preventDefault();
+    setZapisuje(true);
+    setBlad("");
+    setKomunikat("");
+    const { data, error } = await supabase.from("reservation_settings").update({
+      enabled: !!form.enabled,
+      discount_percent: Number(form.discount_percent) || 0,
+      fee_amount: Number(form.fee_amount) || 0,
+      fee_type: form.fee_type,
+      refund_days: Number(form.refund_days) || 0,
+      cancel_allowed: !!form.cancel_allowed,
+      terms_text: form.terms_text || null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", 1).select();
+    setZapisuje(false);
+    if (error || !data || data.length === 0) {
+      setBlad("Nie udało się zapisać. " + (error?.message || "Ustawienia rezerwacji może zmieniać wyłącznie administrator."));
+      return;
+    }
+    setForm(data[0]);
+    setKomunikat("Zapisane. Strona pokazuje nowe warunki od razu — nic nie trzeba wgrywać.");
+  }
+
+  if (loading) return <div style={{ fontSize: 13, color: "#9A9A9A" }}>Wczytywanie…</div>;
+  if (!form) {
+    return (
+      <div style={{ background: "#FDECEC", border: "1px solid #F3C4C4", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, color: "#8A2020" }}>
+        {blad}
+      </div>
+    );
+  }
+
+  return (
+    <div style={S.stack}>
+      <div style={S.card}>
+        <div style={S.cardTitle}>Rezerwacje online</div>
+        <div style={{ fontSize: 12.5, color: "#9A9A9A", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>
+          Warunki, które klient widzi w koszyku na stronie. Zmiana działa natychmiast — nie wymaga
+          wgrywania plików. Charakter opłaty ma skutki prawne, więc ustalaj go ze swoim prawnikiem.
+        </div>
+
+        <form onSubmit={zapisz} style={{ display: "grid", gap: 14, maxWidth: 560 }}>
+          <label style={{ display: "flex", gap: 9, alignItems: "flex-start", fontSize: 13, cursor: "pointer" }}>
+            <input type="checkbox" checked={!!form.enabled} onChange={(e) => zmien("enabled", e.target.checked)} style={{ marginTop: 3 }} />
+            <span>
+              <b>Rezerwacje online włączone</b>
+              <div style={{ fontSize: 12, color: "#9A9A9A" }}>
+                Po wyłączeniu klient zobaczy w koszyku prośbę o kontakt telefoniczny zamiast przycisku rezerwacji.
+              </div>
+            </span>
+          </label>
+
+          <label style={{ display: "flex", gap: 9, alignItems: "flex-start", fontSize: 13, cursor: "pointer" }}>
+            <input type="checkbox" checked={!!form.cancel_allowed} onChange={(e) => zmien("cancel_allowed", e.target.checked)} style={{ marginTop: 3 }} />
+            <span>
+              <b>Klient może sam anulować rezerwację</b>
+              <div style={{ fontSize: 12, color: "#9A9A9A" }}>
+                Odznaczenie usuwa informację o anulowaniu z warunków w koszyku. Przycisk w panelu klienta
+                nadal będzie działał — żeby go zablokować, napisz do Claude.
+              </div>
+            </span>
+          </label>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <div style={S.label}>Rabat na usługi (%)</div>
+              <input type="number" min="0" max="100" step="1" style={{ ...S.input, marginTop: 6 }}
+                value={form.discount_percent ?? 0} onChange={(e) => zmien("discount_percent", e.target.value)} />
+            </div>
+            <div>
+              <div style={S.label}>Opłata rezerwacyjna (zł)</div>
+              <input type="number" min="0" step="1" style={{ ...S.input, marginTop: 6 }}
+                value={form.fee_amount ?? 0} onChange={(e) => zmien("fee_amount", e.target.value)} />
+              <div style={{ fontSize: 11.5, color: "#9A9A9A", marginTop: 5 }}>
+                0 zł = rezerwacja bezpłatna. Pobieranie opłaty zadziała dopiero po podpięciu bramki płatniczej.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 12 }}>
+            <div>
+              <div style={S.label}>Charakter opłaty</div>
+              <select style={{ ...S.select, marginTop: 6, width: "100%" }}
+                value={form.fee_type} onChange={(e) => zmien("fee_type", e.target.value)}>
+                <option value="zwrotna">Zwrotna — przy anulowaniu oddajemy całość</option>
+                <option value="bezzwrotna">Bezzwrotna — przy rezygnacji przepada</option>
+                <option value="zwrotna_do_dni">Zwrotna przez określoną liczbę dni</option>
+              </select>
+            </div>
+            <div>
+              <div style={S.label}>Zwrot w ciągu (dni)</div>
+              <input type="number" min="0" step="1" style={{ ...S.input, marginTop: 6 }}
+                value={form.refund_days ?? 0}
+                disabled={form.fee_type !== "zwrotna_do_dni"}
+                onChange={(e) => zmien("refund_days", e.target.value)} />
+            </div>
+          </div>
+
+          <div>
+            <div style={S.label}>Dodatkowa treść warunków</div>
+            <textarea
+              style={{ ...S.input, marginTop: 6, minHeight: 90, resize: "vertical", fontFamily: "inherit" }}
+              value={form.terms_text || ""}
+              onChange={(e) => zmien("terms_text", e.target.value)}
+              placeholder="Np. Rezerwacja nie jest umową sprzedaży. Potwierdzimy dostępność pojazdu telefonicznie w ciągu jednego dnia roboczego."
+            />
+          </div>
+
+          {blad && <div style={{ color: "#E4241B", fontSize: 12.5 }}>{blad}</div>}
+          {komunikat && (
+            <div style={{ background: "#EAF7EE", border: "1px solid #BFE3CB", borderRadius: 8, padding: "9px 11px", fontSize: 12.5, color: "#1E6B36" }}>
+              {komunikat}
+            </div>
+          )}
+
+          <button type="submit" disabled={zapisuje} style={{ ...S.primaryBtn, opacity: zapisuje ? 0.6 : 1, maxWidth: 220 }}>
+            {zapisuje ? "Zapisuję…" : "Zapisz ustawienia"}
+          </button>
+        </form>
+      </div>
+
+      <div style={{ background: "#FFF7E0", border: "1px solid #F0E0A8", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5 }}>
+        Pobieranie opłaty online wymaga umowy z operatorem płatności. Do czasu jej podpisania rezerwacja
+        jest składana bez opłaty, niezależnie od kwoty ustawionej powyżej — klient widzi ją tylko jako
+        informację o warunkach.
       </div>
     </div>
   );
