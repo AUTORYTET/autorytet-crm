@@ -22,6 +22,24 @@ export default function AuthScreen() {
   const [error, setError] = useState(null);
   const [info, setInfo] = useState(null);
 
+  // Reset hasla: Supabase wysyla link prowadzacy na reset-hasla.html na stronie,
+  // i dopiero tam uzytkownik ustawia nowe haslo. Celowo nie zdradzamy, czy konto
+  // o podanym adresie istnieje.
+  async function resetHasla() {
+    setError(null);
+    setInfo(null);
+    if (!email.trim()) {
+      setError("Wpisz najpierw swój adres e-mail w polu powyżej.");
+      return;
+    }
+    setLoading(true);
+    await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: "https://autorytet.com.pl/reset-hasla.html",
+    });
+    setLoading(false);
+    setInfo("Jeśli konto o tym adresie istnieje, wysłaliśmy na nie link do ustawienia nowego hasła. Sprawdź skrzynkę, także folder spam.");
+  }
+
   async function submit(e) {
     e.preventDefault();
     setError(null);
@@ -93,6 +111,17 @@ export default function AuthScreen() {
           <button type="submit" disabled={loading} style={{ marginTop: 6, background: "#E4241B", color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
             {loading ? "Chwileczkę…" : mode === "login" ? "Zaloguj się" : "Utwórz konto"}
           </button>
+
+          {mode === "login" && (
+            <button
+              type="button"
+              onClick={resetHasla}
+              disabled={loading}
+              style={{ background: "none", border: "none", fontSize: 12.5, color: "#9A9A9A", textDecoration: "underline", cursor: "pointer", padding: 0, marginTop: 2 }}
+            >
+              Nie pamiętam hasła
+            </button>
+          )}
         </form>
 
         {mode === "register" && (

@@ -5734,6 +5734,20 @@ function OsobaWiersz({ p, prawa }) {
   );
 }
 
+function AkcjeKonta({ p, user, onHaslo, onUsun }) {
+  if (p.id === user.id) return null;
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "0 14px 12px" }}>
+      <button type="button" style={{ ...S.secondaryBtn, fontSize: 12 }} onClick={() => onHaslo(p)}>
+        Ustaw nowe hasło
+      </button>
+      <button type="button" style={{ ...S.secondaryBtn, fontSize: 12, color: "#E4241B" }} onClick={() => onUsun(p)}>
+        Usuń konto
+      </button>
+    </div>
+  );
+}
+
 function OrgUsersSettingsPanel({ user }) {
   const [subTab, setSubTab] = useState("team");
   const [staff, setStaff] = useState([]);
@@ -5741,6 +5755,7 @@ function OrgUsersSettingsPanel({ user }) {
   const [roleMsg, setRoleMsg] = useState("");
   const [okMsg, setOkMsg] = useState("");
   const [potwierdzenie, setPotwierdzenie] = useState(null);
+  const [wynikKonta, setWynikKonta] = useState(null);
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -5748,6 +5763,54 @@ function OrgUsersSettingsPanel({ user }) {
     setStaff(data || []);
     setLoading(false);
   }, []);
+
+  // Zmiana cudzego hasla i usuniecie konta wymagaja klucza serwerowego, wiec
+  // robi to funkcja /api/team-access, ktora osobno sprawdza, czy proszacy
+  // jest administratorem.
+  async function wywolajApi(payload) {
+    const { data: sesja } = await supabase.auth.getSession();
+    const token = sesja?.session?.access_token;
+    if (!token) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
+    const odp = await fetch("/api/team-access", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify(payload),
+    });
+    const dane = await odp.json().catch(() => ({}));
+    if (!odp.ok) throw new Error(dane.error || "Nie udało się wykonać operacji.");
+    return dane;
+  }
+
+  const nadajNoweHaslo = (p) =>
+    setPotwierdzenie({
+      tytul: "Nowe hasło dla użytkownika",
+      opis:
+        "Ustawimy nowe, losowe hasło dla " + (p.email || p.id) +
+        ". Dotychczasowe od razu przestanie działać. Potwierdź swoim hasłem.",
+      onOk: async () => {
+        setRoleMsg(""); setOkMsg(""); setWynikKonta(null);
+        try {
+          const d = await wywolajApi({ action: "setPassword", userId: p.id });
+          setWynikKonta({ ...d, email: p.email || p.id });
+        } catch (e) { setRoleMsg(e.message); }
+      },
+    });
+
+  const usunKonto = (p) =>
+    setPotwierdzenie({
+      tytul: "Usunięcie konta",
+      opis:
+        "Konto " + (p.email || p.id) + " zostanie trwale usunięte i nie da się tego cofnąć. " +
+        "Konta pracowników oraz konta z rezerwacjami są chronione — system je odmówi. Potwierdź swoim hasłem.",
+      onOk: async () => {
+        setRoleMsg(""); setOkMsg(""); setWynikKonta(null);
+        try {
+          await wywolajApi({ action: "deleteUser", userId: p.id });
+          setOkMsg("Konto zostało usunięte.");
+          loadStaff();
+        } catch (e) { setRoleMsg(e.message); }
+      },
+    });
 
   useEffect(() => { loadStaff(); }, [loadStaff]);
 
@@ -5816,6 +5879,30 @@ function OrgUsersSettingsPanel({ user }) {
         onChange={setSubTab}
       />
 
+      {wynikKonta && (
+        <div style={{ ...S.card, borderColor: "#BFE3CB", background: "#F6FCF8" }}>
+          <div style={S.cardTitle}>Nowe hasło ustawione</div>
+          <div style={{ fontSize: 13, marginTop: 10, lineHeight: 1.6 }}>
+            <div><b>Konto:</b> {wynikKonta.email}</div>
+            <div style={{ marginTop: 10 }}><b>Hasło tymczasowe:</b></div>
+            <div style={{
+              fontFamily: "monospace", fontSize: 16, letterSpacing: 1, background: "#fff",
+              border: "1px solid #E7E5E2", borderRadius: 8, padding: "10px 12px", marginTop: 6,
+              userSelect: "all", wordBreak: "break-all",
+            }}>
+              {wynikKonta.tempPassword}
+            </div>
+            <div style={{ fontSize: 12.5, color: "#6B6B6B", marginTop: 12, lineHeight: 1.55 }}>
+              Pokazuje się <b>tylko teraz</b>. Przekaż je tej osobie bezpiecznie i poproś, żeby ustawiła
+              własne w Ustawienia → Hasło.
+            </div>
+          </div>
+          <button type="button" style={{ ...S.secondaryBtn, marginTop: 14 }} onClick={() => setWynikKonta(null)}>
+            Ukryj
+          </button>
+        </div>
+      )}
+
       {subTab === "team" && (
         <div style={S.card}>
           <div style={S.cardTitle}>Zespół z dostępem do CRM</div>
@@ -5840,8 +5927,8 @@ function OrgUsersSettingsPanel({ user }) {
                 <span style={{ flex: 1.4 }}>Rola</span>
               </div>
               {zespol.map((p) => (
+                <div key={p.id}>
                 <OsobaWiersz
-                  key={p.id}
                   p={p}
                   prawa={
                     p.id === user.id ? (
@@ -5863,6 +5950,8 @@ function OrgUsersSettingsPanel({ user }) {
                     )
                   }
                 />
+                <AkcjeKonta p={p} user={user} onHaslo={nadajNoweHaslo} onUsun={usunKonto} />
+                </div>
               ))}
             </div>
           )}
@@ -5911,11 +6000,13 @@ function OrgUsersSettingsPanel({ user }) {
                 <span style={{ flex: 1.4 }}>Rola</span>
               </div>
               {klienci.map((p) => (
-                <OsobaWiersz
-                  key={p.id}
-                  p={p}
-                  prawa={<span style={{ fontSize: 13, color: "#6B6B6B" }}>Klient</span>}
-                />
+                <div key={p.id}>
+                  <OsobaWiersz
+                    p={p}
+                    prawa={<span style={{ fontSize: 13, color: "#6B6B6B" }}>Klient</span>}
+                  />
+                  <AkcjeKonta p={p} user={user} onHaslo={nadajNoweHaslo} onUsun={usunKonto} />
+                </div>
               ))}
             </div>
           )}
