@@ -757,123 +757,43 @@
 
 <section class="konto-hero">
   <div class="wrap">
-    <span class="konto-hero-eyebrow">Panel klienta</span>
-    <h1>Twoje konto AUTORYTET</h1>
-    <p>Zaloguj się lub załóż konto, żeby przeglądać ofertę, odkładać auta do koszyka i rezerwować je online — z dodatkowym rabatem -10% na usługi AUTORYTET.</p>
+    <span class="konto-hero-eyebrow">Bezpieczeństwo konta</span>
+    <h1>Ustaw nowe hasło</h1>
+    <p>Wpisz nowe hasło do swojego konta AUTORYTET.</p>
   </div>
 </section>
 
 <section class="konto-section">
   <div class="wrap">
+    <div class="koszyk-karta" style="max-width:460px;margin:0 auto;">
+      <div id="resetLadowanie">Sprawdzam link…</div>
 
-    <!-- WIDOK: NIEZALOGOWANY -->
-    <div id="kontoAuthSection">
-      <div class="konto-auth-wrap">
-        <div class="konto-tabs">
-          <button type="button" class="konto-tab active" id="kontoTabLogin">Zaloguj się</button>
-          <button type="button" class="konto-tab" id="kontoTabRegister">Zarejestruj się</button>
-        </div>
+      <div id="resetBrakLinku" style="display:none;">
+        <h2>Link jest nieaktualny</h2>
+        <p style="font-size:13.5px;line-height:1.6;color:#4A4A4A;">
+          Ten link do zmiany hasła wygasł albo został już użyty. Poproś o nowy — na stronie logowania
+          kliknij „Nie pamiętam hasła".
+        </p>
+        <a class="konto-cart-go" style="margin-top:16px;" href="konto.html">Wróć do logowania</a>
+      </div>
 
-        <form id="clientLoginForm" class="auth-form konto-auth-form active">
-          <label>Adres e-mail</label>
-          <input type="email" id="clientEmail" required placeholder="twoj@email.pl">
-          <label>Hasło</label>
-          <input type="password" id="clientPassword" required placeholder="••••••••">
-          <div class="auth-error" id="clientLoginError"></div>
-          <button type="submit" class="btn-red auth-submit">Zaloguj się</button>
-          <button type="button" class="auth-forgot" id="clientForgotBtn">Nie pamiętam hasła</button>
-        </form>
+      <form id="resetForm" class="auth-form" style="display:none;">
+        <label>Nowe hasło</label>
+        <input type="password" id="resetHaslo" required minlength="8" placeholder="min. 8 znaków">
+        <label>Powtórz nowe hasło</label>
+        <input type="password" id="resetHaslo2" required minlength="8" placeholder="••••••••">
+        <div class="auth-error" id="resetBlad"></div>
+        <button type="submit" class="btn-red auth-submit">Zapisz nowe hasło</button>
+      </form>
 
-        <form id="clientRegisterForm" class="auth-form konto-auth-form">
-          <label>Imię i nazwisko</label>
-          <input type="text" id="registerName" required placeholder="Jan Kowalski">
-          <div class="konto-form-row-split">
-            <div>
-              <label>Telefon</label>
-              <input type="tel" id="registerPhone" required placeholder="+48 ...">
-            </div>
-            <div>
-              <label>Adres e-mail</label>
-              <input type="email" id="registerEmail" required placeholder="twoj@email.pl">
-            </div>
-          </div>
-          <label>Hasło</label>
-          <input type="password" id="registerPassword" required placeholder="min. 6 znaków">
-          <label>Powtórz hasło</label>
-          <input type="password" id="registerPasswordConfirm" required placeholder="••••••••">
-          <div class="auth-error" id="registerError"></div>
-          <button type="submit" class="btn-red auth-submit">Załóż konto</button>
-        </form>
+      <div id="resetSukces" style="display:none;">
+        <h2>Hasło zmienione</h2>
+        <p style="font-size:13.5px;line-height:1.6;color:#4A4A4A;">
+          Możesz się teraz zalogować nowym hasłem.
+        </p>
+        <a class="konto-cart-go" style="margin-top:16px;" href="konto.html">Przejdź do logowania</a>
       </div>
     </div>
-
-    <!-- WIDOK: ZALOGOWANY (Panel klienta) -->
-    <div id="kontoDashboardSection" style="display:none;">
-
-      <div class="konto-dashboard-top">
-        <div class="who">Zalogowano jako <b id="kontoUserEmail">—</b></div>
-        <button type="button" class="konto-logout-btn" id="kontoLogoutBtn">Wyloguj się</button>
-      </div>
-
-      <div class="konto-promo-banner">
-        <span class="badge">-10%</span>
-        <p>Zarezerwuj auto online przez koszyk poniżej, a otrzymasz dodatkowy rabat -10% na usługi AUTORYTET.</p>
-      </div>
-
-      <div class="konto-layout">
-        <div class="konto-browse">
-          <form class="search-panel" id="searchPanel">
-            <div class="search-field">
-              <label>Marka</label>
-              <select id="filterBrand">
-                <option value="">Wszystkie marki</option>
-              </select>
-            </div>
-            <div class="search-field">
-              <label>Typ nadwozia</label>
-              <select id="filterBodyType">
-                <option value="">Dowolny</option>
-                <option value="SUV">SUV</option>
-                <option value="Sedan">Sedan</option>
-                <option value="Kombi">Kombi</option>
-                <option value="Coupe">Coupe</option>
-                <option value="Hatchback">Hatchback</option>
-                <option value="Cabrio">Cabrio</option>
-                <option value="Van">Van</option>
-              </select>
-            </div>
-            <div class="search-field">
-              <label>Budżet do</label>
-              <select id="filterBudget">
-                <option value="">Bez limitu</option>
-              </select>
-            </div>
-            <button type="submit" class="search-submit">Szukaj</button>
-          </form>
-          <div class="section-head">
-            <h2>Przeglądaj oferty</h2>
-            <p class="listing-count" id="listingCount">Wczytywanie ofert…</p>
-          </div>
-          <div class="listing-grid" id="listingGrid"></div>
-        </div>
-
-        <div class="konto-cart">
-          <h3>Twój koszyk</h3>
-          <div id="kontoCartItems">
-            <div class="konto-cart-empty">Koszyk jest pusty — dodaj auto z listy obok.</div>
-          </div>
-          <a class="konto-cart-go" id="kontoCartGoBtn" href="koszyk.html">Przejdź do koszyka →</a>
-          <div class="konto-cart-status" id="kontoCartStatus"></div>
-
-          <div class="konto-reservations">
-            <h4>Twoje rezerwacje</h4>
-            <div id="kontoReservationsList"><div class="konto-reservations-empty">Brak wcześniejszych rezerwacji.</div></div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
   </div>
 </section>
 <footer>
@@ -920,563 +840,59 @@
     var SUPABASE_URL = "https://csgqmofkjjfmsbknnxqc.supabase.co";
     var SUPABASE_KEY = "sb_publishable_egdRjqCBEHiYiMxHKHhWwg_8f96sa1O";
     var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    // ---------- Adresy e-mail przypisane do przycisków (edytowalne w CRM: Ustawienia -> Treści strony) ----------
-    async function getButtonEmails(key, fallbackEmails){
-      try{
-        var result = await sb.from('button_email_settings').select('emails').eq('key', key).single();
-        if(!result.error && result.data && result.data.emails){
-          var list = result.data.emails.split(',').map(function(e){ return e.trim(); }).filter(Boolean);
-          if(list.length) return list;
-        }
-      } catch(e){}
-      return fallbackEmails;
-    }
-    function openModal(id){
-      document.getElementById(id).classList.add('open');
-    }
-    function closeModal(id){
-      document.getElementById(id).classList.remove('open');
-      var errEl = document.getElementById(id).querySelector('.auth-error');
-      if(errEl) errEl.textContent = '';
-    }
-    // Hidden admin dot
-    document.getElementById('adminDot').addEventListener('click', function(){
-      openModal('adminLoginModal');
-    });
-    // Close buttons
-    document.querySelectorAll('.auth-close').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        closeModal(btn.getAttribute('data-close'));
-      });
-    });
-    // Close on overlay click
-    document.querySelectorAll('.auth-modal-overlay').forEach(function(overlay){
-      overlay.addEventListener('click', function(e){
-        if(e.target === overlay){
-          overlay.classList.remove('open');
-        }
-      });
-    });
-    // Client login
-    document.getElementById('clientLoginForm').addEventListener('submit', async function(e){
-      e.preventDefault();
-      var email = document.getElementById('clientEmail').value.trim();
-      var password = document.getElementById('clientPassword').value;
-      var errEl = document.getElementById('clientLoginError');
-      errEl.textContent = '';
-      var result = await sb.auth.signInWithPassword({ email: email, password: password });
-      if(result.error){
-        errEl.textContent = 'Nieprawidłowy e-mail lub hasło.';
-        return;
-      }
-      showDashboard(result.data.user);
-    });
-    // Admin login
-    document.getElementById('adminLoginForm').addEventListener('submit', async function(e){
-      e.preventDefault();
-      var email = document.getElementById('adminEmail').value.trim();
-      var password = document.getElementById('adminPassword').value;
-      var errEl = document.getElementById('adminLoginError');
-      errEl.textContent = '';
-      var result = await sb.auth.signInWithPassword({ email: email, password: password });
-      if(result.error){
-        errEl.textContent = 'Nieprawidłowy login lub hasło.';
-        return;
-      }
-      // verify admin role via profiles table
-      var userId = result.data.user.id;
-      var profile = await sb.from('profiles').select('role').eq('id', userId).single();
-      if(profile.error || !profile.data || profile.data.role !== 'admin'){
-        errEl.textContent = 'Brak uprawnień administratora.';
-        await sb.auth.signOut();
-        return;
-      }
-      window.location.href = '/crm';
-    });
 
-    // ---------- Reset hasla (dodane 2026-09-09) ----------
-    // Supabase wysyla link, ktory prowadzi na reset-hasla.html. Dopiero tam
-    // uzytkownik ustawia nowe haslo. Nie zdradzamy, czy konto istnieje.
-    var adminForgotBtn = document.getElementById('adminForgotBtn');
-    if(adminForgotBtn){
-      adminForgotBtn.addEventListener('click', async function(){
-        var errEl = document.getElementById('adminLoginError');
-        var email = (document.getElementById('adminEmail').value || '').trim();
-        errEl.className = 'auth-error';
-        if(!email){
-          errEl.textContent = 'Wpisz najpierw swój adres e-mail w polu powyżej.';
-          return;
-        }
-        adminForgotBtn.disabled = true;
-        errEl.textContent = 'Wysyłam…';
-        await sb.auth.resetPasswordForEmail(email, { redirectTo: 'https://autorytet.com.pl/reset-hasla.html' });
-        adminForgotBtn.disabled = false;
-        errEl.className = 'auth-error auth-success';
-        errEl.textContent = 'Jeśli konto o tym adresie istnieje, wysłaliśmy na nie link do ustawienia nowego hasła. Sprawdź skrzynkę, także folder spam.';
-      });
+    function pokaz(id, tak){
+      var el = document.getElementById(id);
+      if(el) el.style.display = tak ? '' : 'none';
     }
 
-    // ---------- Wszystkie oferty (pełny magazyn) ----------
-    function formatPrice(n){
-      if(n === null || n === undefined || n === '') return null;
-      return new Intl.NumberFormat('pl-PL').format(n) + ' zł';
+    // Supabase sam odczytuje token z adresu i tworzy tymczasowa sesje.
+    // Bez niej nie wolno pozwolic na zmiane hasla.
+    var gotowe = false;
+    function odblokuj(){
+      if(gotowe) return;
+      gotowe = true;
+      pokaz('resetLadowanie', false);
+      pokaz('resetBrakLinku', false);
+      pokaz('resetForm', true);
     }
-    function carCardHtml(car){
-      var photo = car.image_url
-        ? '<img src="' + car.image_url + '" alt="' + (car.brand||'') + ' ' + (car.model||'') + '" style="width:100%;height:100%;object-fit:cover;">'
-        : '<span>Miejsce na zdjęcie</span>';
-      var price = formatPrice(car.price);
-      var monthly = formatPrice(car.monthly_payment);
-      var priceHtml = price ? price : 'Cena na zapytanie';
-      var monthlyHtml = monthly ? '<br><small>lub ' + monthly + ' / mies.</small>' : '';
-      var meta = [car.year, car.body_type].filter(Boolean).join(' · ');
-      var carId = encodeURIComponent(car.id);
-      var brandAttr = (car.brand || '').replace(/"/g, '&quot;');
-      var modelAttr = (car.model || '').replace(/"/g, '&quot;');
-      return '' +
-        '<div class="listing-card">' +
-          '<a href="auto.html?id=' + carId + '" style="display:block;color:inherit;text-decoration:none;">' +
-            '<div class="listing-photo">' + photo + '</div>' +
-            '<div class="listing-body">' +
-              '<h3>' + (car.brand || '') + ' ' + (car.model || '') + '</h3>' +
-              '<div class="listing-meta">' + meta + '</div>' +
-              '<div class="listing-price">' + priceHtml + monthlyHtml + '</div>' +
-            '</div>' +
-          '</a>' +
-          '<div class="listing-body" style="padding-top:0;">' +
-            '<div class="listing-foot" style="border-top:none;padding-top:4px;">' +
-              '<button type="button" class="konto-add-cart-btn" data-car-id="' + car.id + '" data-car-brand="' + brandAttr + '" data-car-model="' + modelAttr + '" data-car-price="' + (car.price || '') + '">Dodaj do koszyka</button>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
-    }
-    async function loadCars(filters){
-      filters = filters || {};
-      var grid = document.getElementById('listingGrid');
-      var countEl = document.getElementById('listingCount');
-      if(!grid) return;
-      grid.innerHTML = '<div class="listing-card"><div class="listing-photo"><span>Wczytywanie ofert…</span></div><div class="listing-body"><h3>&nbsp;</h3></div></div>';
-      var query = sb.from('cars').select('*').eq('status', 'dostepny');
-      if(filters.brand) query = query.eq('brand', filters.brand);
-      if(filters.bodyType) query = query.eq('body_type', filters.bodyType);
-      if(filters.budget) query = query.lte('price', filters.budget);
-      // Limit 500 - pokazuje cały realistyczny magazyn; jeśli ofert jest więcej, daj znać, dodamy paginację.
-      query = query.order('created_at', { ascending: false }).limit(500);
-      var result = await query;
-      if(result.error){
-        grid.innerHTML = '<div class="listing-card"><div class="listing-photo"><span>Nie udało się wczytać ofert. Spróbuj ponownie.</span></div><div class="listing-body"><h3>&nbsp;</h3></div></div>';
-        if(countEl) countEl.textContent = '';
-        return;
-      }
-      if(!result.data || result.data.length === 0){
-        grid.innerHTML = '<div class="listing-card"><div class="listing-photo"><span>Brak ofert spełniających kryteria</span></div><div class="listing-body"><h3>&nbsp;</h3></div></div>';
-        if(countEl) countEl.textContent = '0 ofert';
-        return;
-      }
-      grid.innerHTML = result.data.map(carCardHtml).join('');
-      if(countEl) countEl.textContent = result.data.length + (result.data.length === 1 ? ' oferta' : ' ofert');
-    }
-    (function populateBudgetOptions(){
-      var sel = document.getElementById('filterBudget');
-      if(!sel) return;
-      for(var v = 100000; v <= 2000000; v += 50000){
-        var opt = document.createElement('option');
-        opt.value = v;
-        opt.textContent = new Intl.NumberFormat('pl-PL').format(v) + ' zł';
-        sel.appendChild(opt);
-      }
+
+    sb.auth.onAuthStateChange(function(event, session){
+      if(session) odblokuj();
+    });
+
+    (async function(){
+      var s = await sb.auth.getSession();
+      if(s.data.session){ odblokuj(); return; }
+      // Token bywa odczytywany chwile pozniej — dajemy mu czas.
+      setTimeout(async function(){
+        var s2 = await sb.auth.getSession();
+        if(s2.data.session){ odblokuj(); return; }
+        pokaz('resetLadowanie', false);
+        pokaz('resetBrakLinku', true);
+      }, 1500);
     })();
-    async function populateBrandOptions(){
-      var sel = document.getElementById('filterBrand');
-      if(!sel) return;
-      var result = await sb.from('cars').select('brand').eq('status', 'dostepny');
-      if(result.error || !result.data) return;
-      var brands = [...new Set(result.data.map(function(r){ return r.brand; }).filter(Boolean))].sort();
-      brands.forEach(function(b){
-        var opt = document.createElement('option');
-        opt.value = b;
-        opt.textContent = b;
-        sel.appendChild(opt);
-      });
-    }
-    var searchPanelEl = document.getElementById('searchPanel');
-    if(searchPanelEl){
-      searchPanelEl.addEventListener('submit', function(e){
-        e.preventDefault();
-        var brand = document.getElementById('filterBrand').value;
-        var bodyType = document.getElementById('filterBodyType').value;
-        var budget = document.getElementById('filterBudget').value;
-        loadCars({ brand: brand, bodyType: bodyType, budget: budget });
-      });
-    }
-    // ---------- Edytowalny tekst strony (tylko dla administratora) ----------
-    async function applySiteContent(){
-      var result = await sb.from('site_content').select('*');
-      if(result.error || !result.data) return;
-      result.data.forEach(function(row){
-        var el = document.querySelector('[data-edit-key="' + row.key + '"]');
-        if(el) el.textContent = row.value;
-      });
-    }
-    applySiteContent();
-    async function saveSiteContent(key, value){
-      await sb.from('site_content').upsert({ key: key, value: value, updated_at: new Date().toISOString() });
-    }
-    function enableEditMode(){
-      var toggle = document.createElement('button');
-      toggle.textContent = 'Tryb edycji: wyłączony';
-      toggle.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:1001;background:#111;color:#fff;border:none;padding:10px 16px;border-radius:24px;font-size:13px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,0.3);';
-      document.body.appendChild(toggle);
-      var editing = false;
-      var editableEls = document.querySelectorAll('[data-edit-key]');
-      toggle.addEventListener('click', function(){
-        editing = !editing;
-        toggle.textContent = editing ? 'Tryb edycji: włączony (klikaj tekst)' : 'Tryb edycji: wyłączony';
-        toggle.style.background = editing ? 'var(--red)' : '#111';
-        editableEls.forEach(function(el){
-          el.contentEditable = editing ? 'true' : 'false';
-          el.style.outline = editing ? '1px dashed rgba(228,36,27,0.6)' : 'none';
-          el.style.cursor = editing ? 'text' : '';
-        });
-      });
-      editableEls.forEach(function(el){
-        el.addEventListener('blur', function(){
-          if(!editing) return;
-          var key = el.getAttribute('data-edit-key');
-          var value = el.textContent.trim();
-          saveSiteContent(key, value);
-        });
-      });
-    }
-    async function checkAdminEditMode(){
-      var sessionResult = await sb.auth.getSession();
-      var session = sessionResult.data.session;
-      if(!session) return;
-      var profile = await sb.from('profiles').select('role').eq('id', session.user.id).single();
-      if(!profile.error && profile.data && profile.data.role === 'admin'){
-        enableEditMode();
-      }
-    }
-    checkAdminEditMode();
 
-    // ---------- Panel klienta: logowanie / rejestracja / koszyk / rezerwacje ----------
-    var kontoCurrentUser = null;
-
-    // Koszyk trzymany w pamieci przegladarki. Wczesniej byl zwykla zmienna,
-    // wiec znikal przy kazdym odswiezeniu strony i nie przetrwalby przejscia
-    // na osobna podstrone koszyka.
-    var KOSZYK_KLUCZ = 'autorytet_koszyk';
-    function wczytajKoszyk(){
-      try{
-        var raw = window.localStorage.getItem(KOSZYK_KLUCZ);
-        var dane = raw ? JSON.parse(raw) : [];
-        return Array.isArray(dane) ? dane : [];
-      } catch(e){ return []; }
-    }
-    function zapiszKoszyk(){
-      try{ window.localStorage.setItem(KOSZYK_KLUCZ, JSON.stringify(kontoCart)); } catch(e){}
-    }
-    var kontoCart = wczytajKoszyk();
-
-    function showAuthPanel(){
-      var authSection = document.getElementById('kontoAuthSection');
-      var dashSection = document.getElementById('kontoDashboardSection');
-      if(authSection) authSection.style.display = '';
-      if(dashSection) dashSection.style.display = 'none';
-      kontoCurrentUser = null;
-      // Zawsze wracaj do zakładki logowania (a nie rejestracji), gdy panel się pokazuje na nowo
-      var tabLogin = document.getElementById('kontoTabLogin');
-      var tabRegister = document.getElementById('kontoTabRegister');
-      var loginForm = document.getElementById('clientLoginForm');
-      var registerForm = document.getElementById('clientRegisterForm');
-      if(tabLogin && tabRegister && loginForm && registerForm){
-        tabLogin.classList.add('active');
-        tabRegister.classList.remove('active');
-        loginForm.classList.add('active');
-        registerForm.classList.remove('active');
-      }
-    }
-
-    function showDashboard(user){
-      kontoCurrentUser = user;
-      var authSection = document.getElementById('kontoAuthSection');
-      var dashSection = document.getElementById('kontoDashboardSection');
-      if(authSection) authSection.style.display = 'none';
-      if(dashSection) dashSection.style.display = '';
-      var emailEl = document.getElementById('kontoUserEmail');
-      if(emailEl) emailEl.textContent = user.email || '';
-      loadCars();
-      populateBrandOptions();
-      loadMyReservations();
-      kontoCart = wczytajKoszyk();
-      renderKontoCart();
-    }
-
-    async function kontoCheckSession(){
-      var sessionResult = await sb.auth.getSession();
-      var session = sessionResult.data.session;
-      if(session){
-        showDashboard(session.user);
-      } else {
-        showAuthPanel();
-      }
-    }
-    kontoCheckSession();
-
-
-    // ---------- Reset hasla (dodane 2026-09-09) ----------
-    // Supabase wysyla link, ktory prowadzi na reset-hasla.html. Dopiero tam
-    // uzytkownik ustawia nowe haslo. Nie zdradzamy, czy konto istnieje.
-    var clientForgotBtn = document.getElementById('clientForgotBtn');
-    if(clientForgotBtn){
-      clientForgotBtn.addEventListener('click', async function(){
-        var errEl = document.getElementById('clientLoginError');
-        var email = (document.getElementById('clientEmail').value || '').trim();
-        errEl.className = 'auth-error';
-        if(!email){
-          errEl.textContent = 'Wpisz najpierw swój adres e-mail w polu powyżej.';
-          return;
-        }
-        clientForgotBtn.disabled = true;
-        errEl.textContent = 'Wysyłam…';
-        await sb.auth.resetPasswordForEmail(email, { redirectTo: 'https://autorytet.com.pl/reset-hasla.html' });
-        clientForgotBtn.disabled = false;
-        errEl.className = 'auth-error auth-success';
-        errEl.textContent = 'Jeśli konto o tym adresie istnieje, wysłaliśmy na nie link do ustawienia nowego hasła. Sprawdź skrzynkę, także folder spam.';
-      });
-    }
-
-    // ---------- Zakładki logowanie / rejestracja ----------
-    var kontoTabLogin = document.getElementById('kontoTabLogin');
-    var kontoTabRegister = document.getElementById('kontoTabRegister');
-    var kontoLoginFormEl = document.getElementById('clientLoginForm');
-    var kontoRegisterFormEl = document.getElementById('clientRegisterForm');
-    if(kontoTabLogin && kontoTabRegister){
-      kontoTabLogin.addEventListener('click', function(){
-        kontoTabLogin.classList.add('active');
-        kontoTabRegister.classList.remove('active');
-        kontoLoginFormEl.classList.add('active');
-        kontoRegisterFormEl.classList.remove('active');
-      });
-      kontoTabRegister.addEventListener('click', function(){
-        kontoTabRegister.classList.add('active');
-        kontoTabLogin.classList.remove('active');
-        kontoRegisterFormEl.classList.add('active');
-        kontoLoginFormEl.classList.remove('active');
-      });
-    }
-
-    // ---------- Rejestracja nowego klienta ----------
-    if(kontoRegisterFormEl){
-      kontoRegisterFormEl.addEventListener('submit', async function(e){
-        e.preventDefault();
-        var name = document.getElementById('registerName').value.trim();
-        var phone = document.getElementById('registerPhone').value.trim();
-        var email = document.getElementById('registerEmail').value.trim();
-        var password = document.getElementById('registerPassword').value;
-        var passwordConfirm = document.getElementById('registerPasswordConfirm').value;
-        var errEl = document.getElementById('registerError');
-        errEl.textContent = '';
-        errEl.className = 'auth-error';
-        if(password !== passwordConfirm){
-          errEl.textContent = 'Podane hasła nie są identyczne.';
-          return;
-        }
-        if(password.length < 6){
-          errEl.textContent = 'Hasło musi mieć co najmniej 6 znaków.';
-          return;
-        }
-        var result = await sb.auth.signUp({
-          email: email,
-          password: password,
-          options: { data: { full_name: name, phone: phone } }
-        });
-        if(result.error){
-          errEl.textContent = 'Nie udało się założyć konta: ' + result.error.message;
-          return;
-        }
-        if(result.data && result.data.session){
-          showDashboard(result.data.user);
-        } else {
-          errEl.className = 'auth-error auth-success';
-          errEl.textContent = 'Konto utworzone! Sprawdź swoją skrzynkę e-mail, aby potwierdzić rejestrację, a następnie zaloguj się.';
-          kontoRegisterFormEl.reset();
-        }
-      });
-    }
-
-    // ---------- Wylogowanie ----------
-    var kontoLogoutBtn = document.getElementById('kontoLogoutBtn');
-    if(kontoLogoutBtn){
-      kontoLogoutBtn.addEventListener('click', async function(){
-        await sb.auth.signOut();
-        kontoCart = [];
-        zapiszKoszyk();
-        renderKontoCart();
-        showAuthPanel();
-      });
-    }
-
-    // ---------- Koszyk (rezerwacja aut) ----------
-    function renderKontoCart(){
-      var itemsEl = document.getElementById('kontoCartItems');
-      var reserveBtn = document.getElementById('kontoCartGoBtn');
-      if(!itemsEl) return;
-      if(kontoCart.length === 0){
-        itemsEl.innerHTML = '<div class="konto-cart-empty">Koszyk jest pusty — dodaj auto z listy obok.</div>';
-        if(reserveBtn){ reserveBtn.setAttribute('disabled','disabled'); reserveBtn.style.pointerEvents = 'none'; }
+    document.getElementById('resetForm').addEventListener('submit', async function(e){
+      e.preventDefault();
+      var errEl = document.getElementById('resetBlad');
+      var h1 = document.getElementById('resetHaslo').value;
+      var h2 = document.getElementById('resetHaslo2').value;
+      errEl.className = 'auth-error';
+      if(h1 !== h2){ errEl.textContent = 'Podane hasła nie są identyczne.'; return; }
+      if(h1.length < 8){ errEl.textContent = 'Hasło musi mieć co najmniej 8 znaków.'; return; }
+      errEl.textContent = 'Zapisuję…';
+      var r = await sb.auth.updateUser({ password: h1 });
+      if(r.error){
+        errEl.textContent = 'Nie udało się zmienić hasła: ' + r.error.message;
         return;
       }
-      itemsEl.innerHTML = kontoCart.map(function(item){
-        var priceTxt = item.price ? new Intl.NumberFormat('pl-PL').format(item.price) + ' zł' : 'Cena na zapytanie';
-        return '' +
-          '<div class="konto-cart-item">' +
-            '<div><div class="name">' + item.brand + ' ' + item.model + '</div><div class="price">' + priceTxt + '</div></div>' +
-            '<button type="button" class="konto-cart-remove" data-remove-id="' + item.id + '">&times;</button>' +
-          '</div>';
-      }).join('');
-      if(reserveBtn){ reserveBtn.removeAttribute('disabled'); reserveBtn.style.pointerEvents = ''; }
-      itemsEl.querySelectorAll('.konto-cart-remove').forEach(function(btn){
-        btn.addEventListener('click', function(){
-          kontoCart = kontoCart.filter(function(c){ return c.id !== btn.getAttribute('data-remove-id'); });
-          zapiszKoszyk();
-          renderKontoCart();
-          var addBtn = document.querySelector('.konto-add-cart-btn[data-car-id="' + btn.getAttribute('data-remove-id') + '"]');
-          if(addBtn){ addBtn.classList.remove('added'); addBtn.textContent = 'Dodaj do koszyka'; }
-        });
-      });
-    }
-    renderKontoCart();
-
-    document.addEventListener('click', function(e){
-      var btn = e.target.closest ? e.target.closest('.konto-add-cart-btn') : null;
-      if(!btn) return;
-      var id = btn.getAttribute('data-car-id');
-      if(kontoCart.some(function(c){ return c.id === id; })) return;
-      kontoCart.push({
-        id: id,
-        brand: btn.getAttribute('data-car-brand') || '',
-        model: btn.getAttribute('data-car-model') || '',
-        price: parseFloat(btn.getAttribute('data-car-price')) || null
-      });
-      btn.classList.add('added');
-      btn.textContent = 'Dodano ✓';
-      zapiszKoszyk();
-      renderKontoCart();
+      await sb.auth.signOut();
+      pokaz('resetForm', false);
+      pokaz('resetSukces', true);
     });
-
-    // ---------- Powiadomienie e-mail o nowej rezerwacji (do zespołu AUTORYTET) ----------
-    async function sendReservationEmailNotification(rows){
-      var recipients = await getButtonEmails('konto_rezerwacja', ['cezary.kozlowski@autorytet.com.pl', 'uruszula.kaczmarek@autorytet.com.pl', 'ewelina.kozlowska@autorytet.com.pl']);
-      var carsList = rows.map(function(r){
-        var priceTxt = r.car_price ? new Intl.NumberFormat('pl-PL').format(r.car_price) + ' zł' : 'cena na zapytanie';
-        return r.car_brand + ' ' + r.car_model + ' (' + priceTxt + ')';
-      }).join(', ');
-      var clientEmailTxt = (kontoCurrentUser && kontoCurrentUser.email) ? kontoCurrentUser.email : '—';
-      return Promise.allSettled(recipients.map(function(email){
-        var formData = new FormData();
-        formData.append('_subject', 'Nowa rezerwacja online — autorytet.com.pl');
-        formData.append('_captcha', 'false');
-        formData.append('_template', 'table');
-        formData.append('Klient (e-mail)', clientEmailTxt);
-        formData.append('Zarezerwowane auta', carsList);
-        formData.append('Rabat', '-10% na usługi AUTORYTET');
-        return fetch('https://formsubmit.co/ajax/' + encodeURIComponent(email), {
-          method: 'POST',
-          headers: { 'Accept': 'application/json' },
-          body: formData
-        });
-      })).catch(function(){ /* powiadomienie e-mail jest pomocnicze — brak jego wysyłki nie blokuje rezerwacji */ });
-    }
-
-    // ---------- Rezerwacja online ----------
-    // Skladanie rezerwacji przenieslismy na osobna podstrone koszyk.html -
-    // tam klient widzi warunki rezerwacji i (docelowo) oplaca ja online.
-    // Tutaj zostaje tylko podglad koszyka i przejscie dalej.
-
-    // ---------- Historia rezerwacji klienta ----------
-    var STATUS_OPIS = {
-      'nowa': 'Nowa',
-      'oczekuje_na_platnosc': 'Czeka na opłatę',
-      'oplacona': 'Opłacona',
-      'potwierdzona': 'Potwierdzona',
-      'anulowana': 'Anulowana',
-      'zwrocona': 'Zwrócona',
-      'zrealizowana': 'Zrealizowana'
-    };
-    // Statusy, z ktorych klient moze jeszcze zrezygnowac. Baza pilnuje tego
-    // po swojej stronie - to tutaj tylko chowa przycisk, zeby nie kusil.
-    var STATUSY_DO_ANULOWANIA = ['nowa', 'oczekuje_na_platnosc', 'oplacona', 'potwierdzona'];
-
-    function bezpiecznyTekst(t){
-      var d = document.createElement('div');
-      d.textContent = (t === null || t === undefined) ? '' : String(t);
-      return d.innerHTML;
-    }
-
-    async function loadMyReservations(){
-      var listEl = document.getElementById('kontoReservationsList');
-      if(!listEl || !kontoCurrentUser) return;
-      var result = await sb.from('reservations').select('*')
-        .eq('user_id', kontoCurrentUser.id)
-        .order('created_at', { ascending: false }).limit(20);
-      if(result.error || !result.data || result.data.length === 0){
-        listEl.innerHTML = '<div class="konto-reservations-empty">Brak wcześniejszych rezerwacji.</div>';
-        return;
-      }
-      listEl.innerHTML = result.data.map(function(r){
-        var status = r.status || 'nowa';
-        var mozna = STATUSY_DO_ANULOWANIA.indexOf(status) !== -1;
-        var auto = bezpiecznyTekst(((r.car_brand || '') + ' ' + (r.car_model || '')).trim() || 'Pojazd');
-        var nr = r.reservation_number ? bezpiecznyTekst(r.reservation_number) : '';
-        var info = '';
-        if(status === 'anulowana'){
-          info = '<div class="rez-info">Anulowana' +
-                 (r.cancelled_by === 'klient' ? ' przez Ciebie' : ' przez AUTORYTET') + '.</div>';
-        } else if(status === 'potwierdzona'){
-          info = '<div class="rez-info">Doradca potwierdził dostępność pojazdu.</div>';
-        }
-        return '' +
-          '<div class="rez-row" data-rez-id="' + bezpiecznyTekst(r.id) + '">' +
-            '<div class="rez-top">' +
-              '<div><div class="rez-car">' + auto + '</div>' +
-                   (nr ? '<div class="rez-nr">nr ' + nr + '</div>' : '') + '</div>' +
-              '<span class="rez-badge ' + bezpiecznyTekst(status) + '">' +
-                 bezpiecznyTekst(STATUS_OPIS[status] || status) + '</span>' +
-            '</div>' +
-            info +
-            (mozna ? '<button type="button" class="rez-cancel" data-anuluj="' + bezpiecznyTekst(r.id) + '">Anuluj rezerwację</button>' : '') +
-          '</div>';
-      }).join('');
-
-      listEl.querySelectorAll('.rez-cancel').forEach(function(btn){
-        btn.addEventListener('click', async function(){
-          if(!window.confirm('Na pewno anulować tę rezerwację? Tej operacji nie można cofnąć.')) return;
-          btn.disabled = true;
-          btn.textContent = 'Anuluję…';
-          var id = btn.getAttribute('data-anuluj');
-          var res = await sb.from('reservations')
-            .update({ status: 'anulowana', cancel_reason: 'Anulowane przez klienta z panelu' })
-            .eq('id', id).select();
-          if(res.error || !res.data || res.data.length === 0){
-            btn.disabled = false;
-            btn.textContent = 'Anuluj rezerwację';
-            var box = btn.closest('.rez-row');
-            if(box){
-              var w = document.createElement('div');
-              w.className = 'rez-info';
-              w.style.color = '#E4241B';
-              w.textContent = 'Nie udało się anulować: ' +
-                ((res.error && res.error.message) || 'baza odrzuciła zmianę. Zadzwoń do doradcy.');
-              box.appendChild(w);
-            }
-            return;
-          }
-          loadMyReservations();
-        });
-      });
-    }
   })();
 </script>
+
 </body>
 </html>

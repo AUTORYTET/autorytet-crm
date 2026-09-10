@@ -693,13 +693,37 @@
   .rez-info{ font-size:11.5px;color:#9A9A9A;margin-top:6px;line-height:1.45; }
 
 
-  /* --- link resetu hasla (dodane) --- */
-  .auth-forgot{
-    display:block;width:100%;margin-top:10px;background:none;border:none;
-    font-size:12.5px;color:#6B6B6B;text-decoration:underline;cursor:pointer;text-align:center;
-    font-family:inherit;
-  }
-  .auth-forgot:hover{ color:var(--red,#E4241B); }
+  /* --- podstrona koszyka --- */
+  .koszyk-layout{ display:grid;grid-template-columns:1.6fr 1fr;gap:24px;align-items:start; }
+  @media(max-width:900px){ .koszyk-layout{ grid-template-columns:1fr; } }
+  .koszyk-karta{ background:#fff;border:1px solid #E7E5E2;border-radius:10px;padding:22px; }
+  .koszyk-karta h2,.koszyk-karta h3{ font-family:'Oswald',sans-serif;text-transform:uppercase;
+    letter-spacing:0.03em;font-size:16px;margin-bottom:14px; }
+  .koszyk-poz{ display:flex;justify-content:space-between;align-items:center;gap:12px;
+    border-bottom:1px solid #F0EFEC;padding:13px 0; }
+  .koszyk-poz:last-child{ border-bottom:none; }
+  .koszyk-poz .nazwa{ font-weight:700;font-size:14px; }
+  .koszyk-poz .cena{ font-size:12.5px;color:#6B6B6B;margin-top:2px; }
+  .koszyk-usun{ background:none;border:none;font-size:20px;line-height:1;color:#9A9A9A;cursor:pointer;padding:0 4px; }
+  .koszyk-usun:hover{ color:var(--red,#E4241B); }
+  .koszyk-suma{ display:flex;justify-content:space-between;font-size:13px;padding:7px 0; }
+  .koszyk-suma.mocna{ font-weight:700;font-size:15px;border-top:1px solid #E7E5E2;margin-top:8px;padding-top:12px; }
+  .koszyk-warunki{ background:#FAFAF9;border:1px solid #F0EFEC;border-radius:8px;padding:12px;
+    font-size:12.5px;line-height:1.55;color:#4A4A4A;margin-top:14px; }
+  .koszyk-zgoda{ display:flex;gap:9px;align-items:flex-start;font-size:12.5px;line-height:1.5;margin-top:14px;cursor:pointer; }
+  .koszyk-zgoda input{ margin-top:2px;flex-shrink:0; }
+  .koszyk-wroc{ display:inline-block;margin-top:16px;font-size:13px;font-weight:600;color:#6B6B6B;text-decoration:none; }
+  .koszyk-wroc:hover{ color:var(--red,#E4241B); }
+  .koszyk-platnosc{ margin-top:18px;border-top:1px solid #E7E5E2;padding-top:16px; }
+  .koszyk-platnosc h4{ font-family:'Oswald',sans-serif;text-transform:uppercase;font-size:13px;
+    letter-spacing:0.04em;margin-bottom:8px; }
+  .koszyk-platnosc p{ font-size:12.5px;color:#6B6B6B;line-height:1.55; }
+  .koszyk-metody{ display:flex;gap:8px;flex-wrap:wrap;margin-top:10px; }
+  .koszyk-metoda{ border:1px solid #E7E5E2;border-radius:6px;padding:6px 11px;font-size:12px;
+    font-weight:600;color:#9A9A9A;background:#FAFAF9; }
+  .koszyk-sukces{ background:#F6FCF8;border:1px solid #BFE3CB;border-radius:10px;padding:24px; }
+  .koszyk-sukces h2{ font-family:'Oswald',sans-serif;text-transform:uppercase;font-size:18px;margin-bottom:10px; }
+  .koszyk-sukces .numery{ font-family:monospace;font-size:15px;margin:12px 0;letter-spacing:1px; }
 
 </style>
 </head>
@@ -750,128 +774,73 @@
       <input type="password" id="adminPassword" required placeholder="••••••••">
       <div class="auth-error" id="adminLoginError"></div>
       <button type="submit" class="btn-red auth-submit">Zaloguj się</button>
-      <button type="button" class="auth-forgot" id="adminForgotBtn">Nie pamiętam hasła</button>
     </form>
   </div>
 </div>
 
 <section class="konto-hero">
   <div class="wrap">
-    <span class="konto-hero-eyebrow">Panel klienta</span>
-    <h1>Twoje konto AUTORYTET</h1>
-    <p>Zaloguj się lub załóż konto, żeby przeglądać ofertę, odkładać auta do koszyka i rezerwować je online — z dodatkowym rabatem -10% na usługi AUTORYTET.</p>
+    <span class="konto-hero-eyebrow">Koszyk</span>
+    <h1>Twoja rezerwacja</h1>
+    <p>Sprawdź wybrane pojazdy, zapoznaj się z warunkami i złóż rezerwację. Skontaktujemy się z Tobą, żeby potwierdzić dostępność auta.</p>
   </div>
 </section>
 
 <section class="konto-section">
   <div class="wrap">
 
-    <!-- WIDOK: NIEZALOGOWANY -->
-    <div id="kontoAuthSection">
-      <div class="konto-auth-wrap">
-        <div class="konto-tabs">
-          <button type="button" class="konto-tab active" id="kontoTabLogin">Zaloguj się</button>
-          <button type="button" class="konto-tab" id="kontoTabRegister">Zarejestruj się</button>
-        </div>
+    <div id="koszykLadowanie" class="koszyk-karta">Wczytywanie koszyka…</div>
 
-        <form id="clientLoginForm" class="auth-form konto-auth-form active">
-          <label>Adres e-mail</label>
-          <input type="email" id="clientEmail" required placeholder="twoj@email.pl">
-          <label>Hasło</label>
-          <input type="password" id="clientPassword" required placeholder="••••••••">
-          <div class="auth-error" id="clientLoginError"></div>
-          <button type="submit" class="btn-red auth-submit">Zaloguj się</button>
-          <button type="button" class="auth-forgot" id="clientForgotBtn">Nie pamiętam hasła</button>
-        </form>
-
-        <form id="clientRegisterForm" class="auth-form konto-auth-form">
-          <label>Imię i nazwisko</label>
-          <input type="text" id="registerName" required placeholder="Jan Kowalski">
-          <div class="konto-form-row-split">
-            <div>
-              <label>Telefon</label>
-              <input type="tel" id="registerPhone" required placeholder="+48 ...">
-            </div>
-            <div>
-              <label>Adres e-mail</label>
-              <input type="email" id="registerEmail" required placeholder="twoj@email.pl">
-            </div>
-          </div>
-          <label>Hasło</label>
-          <input type="password" id="registerPassword" required placeholder="min. 6 znaków">
-          <label>Powtórz hasło</label>
-          <input type="password" id="registerPasswordConfirm" required placeholder="••••••••">
-          <div class="auth-error" id="registerError"></div>
-          <button type="submit" class="btn-red auth-submit">Załóż konto</button>
-        </form>
-      </div>
+    <div id="koszykNiezalogowany" class="koszyk-karta" style="display:none;">
+      <h2>Zaloguj się, żeby dokończyć</h2>
+      <p style="font-size:13.5px;line-height:1.6;color:#4A4A4A;">
+        Rezerwację składamy na koncie klienta — dzięki temu widzisz jej status i możesz ją anulować.
+        Twój koszyk jest zapamiętany i będzie tu czekał.
+      </p>
+      <a class="konto-cart-go" style="max-width:280px;margin-top:16px;" href="konto.html">Zaloguj się lub załóż konto</a>
     </div>
 
-    <!-- WIDOK: ZALOGOWANY (Panel klienta) -->
-    <div id="kontoDashboardSection" style="display:none;">
+    <div id="koszykPusty" class="koszyk-karta" style="display:none;">
+      <h2>Koszyk jest pusty</h2>
+      <p style="font-size:13.5px;line-height:1.6;color:#4A4A4A;">Wybierz auta z oferty, a wrócą tutaj.</p>
+      <a class="konto-cart-go" style="max-width:280px;margin-top:16px;" href="konto.html">Przeglądaj oferty</a>
+    </div>
 
-      <div class="konto-dashboard-top">
-        <div class="who">Zalogowano jako <b id="kontoUserEmail">—</b></div>
-        <button type="button" class="konto-logout-btn" id="kontoLogoutBtn">Wyloguj się</button>
-      </div>
+    <div id="koszykSukces" class="koszyk-sukces" style="display:none;"></div>
 
-      <div class="konto-promo-banner">
-        <span class="badge">-10%</span>
-        <p>Zarezerwuj auto online przez koszyk poniżej, a otrzymasz dodatkowy rabat -10% na usługi AUTORYTET.</p>
-      </div>
-
-      <div class="konto-layout">
-        <div class="konto-browse">
-          <form class="search-panel" id="searchPanel">
-            <div class="search-field">
-              <label>Marka</label>
-              <select id="filterBrand">
-                <option value="">Wszystkie marki</option>
-              </select>
-            </div>
-            <div class="search-field">
-              <label>Typ nadwozia</label>
-              <select id="filterBodyType">
-                <option value="">Dowolny</option>
-                <option value="SUV">SUV</option>
-                <option value="Sedan">Sedan</option>
-                <option value="Kombi">Kombi</option>
-                <option value="Coupe">Coupe</option>
-                <option value="Hatchback">Hatchback</option>
-                <option value="Cabrio">Cabrio</option>
-                <option value="Van">Van</option>
-              </select>
-            </div>
-            <div class="search-field">
-              <label>Budżet do</label>
-              <select id="filterBudget">
-                <option value="">Bez limitu</option>
-              </select>
-            </div>
-            <button type="submit" class="search-submit">Szukaj</button>
-          </form>
-          <div class="section-head">
-            <h2>Przeglądaj oferty</h2>
-            <p class="listing-count" id="listingCount">Wczytywanie ofert…</p>
-          </div>
-          <div class="listing-grid" id="listingGrid"></div>
+    <div id="koszykTresc" style="display:none;">
+      <div class="koszyk-layout">
+        <div class="koszyk-karta">
+          <h2>Wybrane pojazdy</h2>
+          <div id="koszykLista"></div>
+          <a class="koszyk-wroc" href="konto.html">← Wróć do przeglądania ofert</a>
         </div>
 
-        <div class="konto-cart">
-          <h3>Twój koszyk</h3>
-          <div id="kontoCartItems">
-            <div class="konto-cart-empty">Koszyk jest pusty — dodaj auto z listy obok.</div>
-          </div>
-          <a class="konto-cart-go" id="kontoCartGoBtn" href="koszyk.html">Przejdź do koszyka →</a>
-          <div class="konto-cart-status" id="kontoCartStatus"></div>
+        <div class="koszyk-karta">
+          <h3>Podsumowanie</h3>
+          <div id="koszykPodsumowanie"></div>
+          <div class="koszyk-warunki" id="koszykWarunki">Wczytywanie warunków rezerwacji…</div>
 
-          <div class="konto-reservations">
-            <h4>Twoje rezerwacje</h4>
-            <div id="kontoReservationsList"><div class="konto-reservations-empty">Brak wcześniejszych rezerwacji.</div></div>
+          <label class="koszyk-zgoda">
+            <input type="checkbox" id="koszykZgoda">
+            <span>Zapoznałem się z warunkami rezerwacji i akceptuję je.</span>
+          </label>
+
+          <button type="button" class="konto-cart-go" id="koszykZlozBtn" disabled>Złóż rezerwację</button>
+          <div class="konto-cart-status" id="koszykStatus"></div>
+
+          <div class="koszyk-platnosc">
+            <h4>Płatność online</h4>
+            <p id="koszykPlatnoscOpis">Płatność online nie jest jeszcze uruchomiona. Rezerwację składasz teraz bez opłaty, a doradca skontaktuje się z Tobą, żeby potwierdzić dostępność pojazdu.</p>
+            <div class="koszyk-metody">
+              <span class="koszyk-metoda">BLIK</span>
+              <span class="koszyk-metoda">Google Pay</span>
+              <span class="koszyk-metoda">PayPal</span>
+              <span class="koszyk-metoda">Karta</span>
+            </div>
           </div>
         </div>
       </div>
-
     </div>
 
   </div>
@@ -920,7 +889,46 @@
     var SUPABASE_URL = "https://csgqmofkjjfmsbknnxqc.supabase.co";
     var SUPABASE_KEY = "sb_publishable_egdRjqCBEHiYiMxHKHhWwg_8f96sa1O";
     var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    // ---------- Adresy e-mail przypisane do przycisków (edytowalne w CRM: Ustawienia -> Treści strony) ----------
+
+    // ---------- modal panelu administracyjnego (jak na pozostalych stronach) ----------
+    function openModal(id){ var m = document.getElementById(id); if(m) m.classList.add('open'); }
+    function closeModal(id){
+      var m = document.getElementById(id); if(!m) return;
+      m.classList.remove('open');
+      var e = m.querySelector('.auth-error'); if(e) e.textContent = '';
+    }
+    var adminDot = document.getElementById('adminDot');
+    if(adminDot) adminDot.addEventListener('click', function(){ openModal('adminLoginModal'); });
+    document.querySelectorAll('[data-close]').forEach(function(btn){
+      btn.addEventListener('click', function(){ closeModal(btn.getAttribute('data-close')); });
+    });
+    document.querySelectorAll('.auth-modal-overlay').forEach(function(overlay){
+      overlay.addEventListener('click', function(e){ if(e.target === overlay) closeModal(overlay.id); });
+    });
+    var adminForm = document.getElementById('adminLoginForm');
+    if(adminForm){
+      adminForm.addEventListener('submit', async function(e){
+        e.preventDefault();
+        var errEl = document.getElementById('adminLoginError');
+        errEl.textContent = '';
+        var r = await sb.auth.signInWithPassword({
+          email: document.getElementById('adminEmail').value.trim(),
+          password: document.getElementById('adminPassword').value
+        });
+        if(r.error){ errEl.textContent = 'Nieprawidłowy login lub hasło.'; return; }
+        // Do CRM wchodzi caly zespol: administrator i doradca.
+        var p = await sb.from('profiles').select('role').eq('id', r.data.user.id).single();
+        var rola = p.data ? p.data.role : null;
+        if(p.error || !p.data || (rola !== 'admin' && rola !== 'doradca')){
+          errEl.textContent = 'To konto nie ma dostępu do CRM.';
+          await sb.auth.signOut();
+          return;
+        }
+        window.location.href = '/crm';
+      });
+    }
+
+    // ---------- adresy e-mail przypisane do przyciskow (edytowalne w CRM) ----------
     async function getButtonEmails(key, fallbackEmails){
       try{
         var result = await sb.from('button_email_settings').select('emails').eq('key', key).single();
@@ -931,552 +939,203 @@
       } catch(e){}
       return fallbackEmails;
     }
-    function openModal(id){
-      document.getElementById(id).classList.add('open');
-    }
-    function closeModal(id){
-      document.getElementById(id).classList.remove('open');
-      var errEl = document.getElementById(id).querySelector('.auth-error');
-      if(errEl) errEl.textContent = '';
-    }
-    // Hidden admin dot
-    document.getElementById('adminDot').addEventListener('click', function(){
-      openModal('adminLoginModal');
-    });
-    // Close buttons
-    document.querySelectorAll('.auth-close').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        closeModal(btn.getAttribute('data-close'));
-      });
-    });
-    // Close on overlay click
-    document.querySelectorAll('.auth-modal-overlay').forEach(function(overlay){
-      overlay.addEventListener('click', function(e){
-        if(e.target === overlay){
-          overlay.classList.remove('open');
-        }
-      });
-    });
-    // Client login
-    document.getElementById('clientLoginForm').addEventListener('submit', async function(e){
-      e.preventDefault();
-      var email = document.getElementById('clientEmail').value.trim();
-      var password = document.getElementById('clientPassword').value;
-      var errEl = document.getElementById('clientLoginError');
-      errEl.textContent = '';
-      var result = await sb.auth.signInWithPassword({ email: email, password: password });
-      if(result.error){
-        errEl.textContent = 'Nieprawidłowy e-mail lub hasło.';
-        return;
-      }
-      showDashboard(result.data.user);
-    });
-    // Admin login
-    document.getElementById('adminLoginForm').addEventListener('submit', async function(e){
-      e.preventDefault();
-      var email = document.getElementById('adminEmail').value.trim();
-      var password = document.getElementById('adminPassword').value;
-      var errEl = document.getElementById('adminLoginError');
-      errEl.textContent = '';
-      var result = await sb.auth.signInWithPassword({ email: email, password: password });
-      if(result.error){
-        errEl.textContent = 'Nieprawidłowy login lub hasło.';
-        return;
-      }
-      // verify admin role via profiles table
-      var userId = result.data.user.id;
-      var profile = await sb.from('profiles').select('role').eq('id', userId).single();
-      if(profile.error || !profile.data || profile.data.role !== 'admin'){
-        errEl.textContent = 'Brak uprawnień administratora.';
-        await sb.auth.signOut();
-        return;
-      }
-      window.location.href = '/crm';
-    });
 
-    // ---------- Reset hasla (dodane 2026-09-09) ----------
-    // Supabase wysyla link, ktory prowadzi na reset-hasla.html. Dopiero tam
-    // uzytkownik ustawia nowe haslo. Nie zdradzamy, czy konto istnieje.
-    var adminForgotBtn = document.getElementById('adminForgotBtn');
-    if(adminForgotBtn){
-      adminForgotBtn.addEventListener('click', async function(){
-        var errEl = document.getElementById('adminLoginError');
-        var email = (document.getElementById('adminEmail').value || '').trim();
-        errEl.className = 'auth-error';
-        if(!email){
-          errEl.textContent = 'Wpisz najpierw swój adres e-mail w polu powyżej.';
-          return;
-        }
-        adminForgotBtn.disabled = true;
-        errEl.textContent = 'Wysyłam…';
-        await sb.auth.resetPasswordForEmail(email, { redirectTo: 'https://autorytet.com.pl/reset-hasla.html' });
-        adminForgotBtn.disabled = false;
-        errEl.className = 'auth-error auth-success';
-        errEl.textContent = 'Jeśli konto o tym adresie istnieje, wysłaliśmy na nie link do ustawienia nowego hasła. Sprawdź skrzynkę, także folder spam.';
-      });
-    }
-
-    // ---------- Wszystkie oferty (pełny magazyn) ----------
-    function formatPrice(n){
-      if(n === null || n === undefined || n === '') return null;
-      return new Intl.NumberFormat('pl-PL').format(n) + ' zł';
-    }
-    function carCardHtml(car){
-      var photo = car.image_url
-        ? '<img src="' + car.image_url + '" alt="' + (car.brand||'') + ' ' + (car.model||'') + '" style="width:100%;height:100%;object-fit:cover;">'
-        : '<span>Miejsce na zdjęcie</span>';
-      var price = formatPrice(car.price);
-      var monthly = formatPrice(car.monthly_payment);
-      var priceHtml = price ? price : 'Cena na zapytanie';
-      var monthlyHtml = monthly ? '<br><small>lub ' + monthly + ' / mies.</small>' : '';
-      var meta = [car.year, car.body_type].filter(Boolean).join(' · ');
-      var carId = encodeURIComponent(car.id);
-      var brandAttr = (car.brand || '').replace(/"/g, '&quot;');
-      var modelAttr = (car.model || '').replace(/"/g, '&quot;');
-      return '' +
-        '<div class="listing-card">' +
-          '<a href="auto.html?id=' + carId + '" style="display:block;color:inherit;text-decoration:none;">' +
-            '<div class="listing-photo">' + photo + '</div>' +
-            '<div class="listing-body">' +
-              '<h3>' + (car.brand || '') + ' ' + (car.model || '') + '</h3>' +
-              '<div class="listing-meta">' + meta + '</div>' +
-              '<div class="listing-price">' + priceHtml + monthlyHtml + '</div>' +
-            '</div>' +
-          '</a>' +
-          '<div class="listing-body" style="padding-top:0;">' +
-            '<div class="listing-foot" style="border-top:none;padding-top:4px;">' +
-              '<button type="button" class="konto-add-cart-btn" data-car-id="' + car.id + '" data-car-brand="' + brandAttr + '" data-car-model="' + modelAttr + '" data-car-price="' + (car.price || '') + '">Dodaj do koszyka</button>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
-    }
-    async function loadCars(filters){
-      filters = filters || {};
-      var grid = document.getElementById('listingGrid');
-      var countEl = document.getElementById('listingCount');
-      if(!grid) return;
-      grid.innerHTML = '<div class="listing-card"><div class="listing-photo"><span>Wczytywanie ofert…</span></div><div class="listing-body"><h3>&nbsp;</h3></div></div>';
-      var query = sb.from('cars').select('*').eq('status', 'dostepny');
-      if(filters.brand) query = query.eq('brand', filters.brand);
-      if(filters.bodyType) query = query.eq('body_type', filters.bodyType);
-      if(filters.budget) query = query.lte('price', filters.budget);
-      // Limit 500 - pokazuje cały realistyczny magazyn; jeśli ofert jest więcej, daj znać, dodamy paginację.
-      query = query.order('created_at', { ascending: false }).limit(500);
-      var result = await query;
-      if(result.error){
-        grid.innerHTML = '<div class="listing-card"><div class="listing-photo"><span>Nie udało się wczytać ofert. Spróbuj ponownie.</span></div><div class="listing-body"><h3>&nbsp;</h3></div></div>';
-        if(countEl) countEl.textContent = '';
-        return;
-      }
-      if(!result.data || result.data.length === 0){
-        grid.innerHTML = '<div class="listing-card"><div class="listing-photo"><span>Brak ofert spełniających kryteria</span></div><div class="listing-body"><h3>&nbsp;</h3></div></div>';
-        if(countEl) countEl.textContent = '0 ofert';
-        return;
-      }
-      grid.innerHTML = result.data.map(carCardHtml).join('');
-      if(countEl) countEl.textContent = result.data.length + (result.data.length === 1 ? ' oferta' : ' ofert');
-    }
-    (function populateBudgetOptions(){
-      var sel = document.getElementById('filterBudget');
-      if(!sel) return;
-      for(var v = 100000; v <= 2000000; v += 50000){
-        var opt = document.createElement('option');
-        opt.value = v;
-        opt.textContent = new Intl.NumberFormat('pl-PL').format(v) + ' zł';
-        sel.appendChild(opt);
-      }
-    })();
-    async function populateBrandOptions(){
-      var sel = document.getElementById('filterBrand');
-      if(!sel) return;
-      var result = await sb.from('cars').select('brand').eq('status', 'dostepny');
-      if(result.error || !result.data) return;
-      var brands = [...new Set(result.data.map(function(r){ return r.brand; }).filter(Boolean))].sort();
-      brands.forEach(function(b){
-        var opt = document.createElement('option');
-        opt.value = b;
-        opt.textContent = b;
-        sel.appendChild(opt);
-      });
-    }
-    var searchPanelEl = document.getElementById('searchPanel');
-    if(searchPanelEl){
-      searchPanelEl.addEventListener('submit', function(e){
-        e.preventDefault();
-        var brand = document.getElementById('filterBrand').value;
-        var bodyType = document.getElementById('filterBodyType').value;
-        var budget = document.getElementById('filterBudget').value;
-        loadCars({ brand: brand, bodyType: bodyType, budget: budget });
-      });
-    }
-    // ---------- Edytowalny tekst strony (tylko dla administratora) ----------
-    async function applySiteContent(){
-      var result = await sb.from('site_content').select('*');
-      if(result.error || !result.data) return;
-      result.data.forEach(function(row){
-        var el = document.querySelector('[data-edit-key="' + row.key + '"]');
-        if(el) el.textContent = row.value;
-      });
-    }
-    applySiteContent();
-    async function saveSiteContent(key, value){
-      await sb.from('site_content').upsert({ key: key, value: value, updated_at: new Date().toISOString() });
-    }
-    function enableEditMode(){
-      var toggle = document.createElement('button');
-      toggle.textContent = 'Tryb edycji: wyłączony';
-      toggle.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:1001;background:#111;color:#fff;border:none;padding:10px 16px;border-radius:24px;font-size:13px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,0.3);';
-      document.body.appendChild(toggle);
-      var editing = false;
-      var editableEls = document.querySelectorAll('[data-edit-key]');
-      toggle.addEventListener('click', function(){
-        editing = !editing;
-        toggle.textContent = editing ? 'Tryb edycji: włączony (klikaj tekst)' : 'Tryb edycji: wyłączony';
-        toggle.style.background = editing ? 'var(--red)' : '#111';
-        editableEls.forEach(function(el){
-          el.contentEditable = editing ? 'true' : 'false';
-          el.style.outline = editing ? '1px dashed rgba(228,36,27,0.6)' : 'none';
-          el.style.cursor = editing ? 'text' : '';
-        });
-      });
-      editableEls.forEach(function(el){
-        el.addEventListener('blur', function(){
-          if(!editing) return;
-          var key = el.getAttribute('data-edit-key');
-          var value = el.textContent.trim();
-          saveSiteContent(key, value);
-        });
-      });
-    }
-    async function checkAdminEditMode(){
-      var sessionResult = await sb.auth.getSession();
-      var session = sessionResult.data.session;
-      if(!session) return;
-      var profile = await sb.from('profiles').select('role').eq('id', session.user.id).single();
-      if(!profile.error && profile.data && profile.data.role === 'admin'){
-        enableEditMode();
-      }
-    }
-    checkAdminEditMode();
-
-    // ---------- Panel klienta: logowanie / rejestracja / koszyk / rezerwacje ----------
-    var kontoCurrentUser = null;
-
-    // Koszyk trzymany w pamieci przegladarki. Wczesniej byl zwykla zmienna,
-    // wiec znikal przy kazdym odswiezeniu strony i nie przetrwalby przejscia
-    // na osobna podstrone koszyka.
+    // ---------- koszyk zapamietany przez przegladarke ----------
     var KOSZYK_KLUCZ = 'autorytet_koszyk';
     function wczytajKoszyk(){
       try{
         var raw = window.localStorage.getItem(KOSZYK_KLUCZ);
-        var dane = raw ? JSON.parse(raw) : [];
-        return Array.isArray(dane) ? dane : [];
+        var d = raw ? JSON.parse(raw) : [];
+        return Array.isArray(d) ? d : [];
       } catch(e){ return []; }
     }
     function zapiszKoszyk(){
-      try{ window.localStorage.setItem(KOSZYK_KLUCZ, JSON.stringify(kontoCart)); } catch(e){}
+      try{ window.localStorage.setItem(KOSZYK_KLUCZ, JSON.stringify(koszyk)); } catch(e){}
     }
-    var kontoCart = wczytajKoszyk();
+    var koszyk = wczytajKoszyk();
+    var uzytkownik = null;
+    var ustawienia = null;
 
-    function showAuthPanel(){
-      var authSection = document.getElementById('kontoAuthSection');
-      var dashSection = document.getElementById('kontoDashboardSection');
-      if(authSection) authSection.style.display = '';
-      if(dashSection) dashSection.style.display = 'none';
-      kontoCurrentUser = null;
-      // Zawsze wracaj do zakładki logowania (a nie rejestracji), gdy panel się pokazuje na nowo
-      var tabLogin = document.getElementById('kontoTabLogin');
-      var tabRegister = document.getElementById('kontoTabRegister');
-      var loginForm = document.getElementById('clientLoginForm');
-      var registerForm = document.getElementById('clientRegisterForm');
-      if(tabLogin && tabRegister && loginForm && registerForm){
-        tabLogin.classList.add('active');
-        tabRegister.classList.remove('active');
-        loginForm.classList.add('active');
-        registerForm.classList.remove('active');
-      }
-    }
-
-    function showDashboard(user){
-      kontoCurrentUser = user;
-      var authSection = document.getElementById('kontoAuthSection');
-      var dashSection = document.getElementById('kontoDashboardSection');
-      if(authSection) authSection.style.display = 'none';
-      if(dashSection) dashSection.style.display = '';
-      var emailEl = document.getElementById('kontoUserEmail');
-      if(emailEl) emailEl.textContent = user.email || '';
-      loadCars();
-      populateBrandOptions();
-      loadMyReservations();
-      kontoCart = wczytajKoszyk();
-      renderKontoCart();
-    }
-
-    async function kontoCheckSession(){
-      var sessionResult = await sb.auth.getSession();
-      var session = sessionResult.data.session;
-      if(session){
-        showDashboard(session.user);
-      } else {
-        showAuthPanel();
-      }
-    }
-    kontoCheckSession();
-
-
-    // ---------- Reset hasla (dodane 2026-09-09) ----------
-    // Supabase wysyla link, ktory prowadzi na reset-hasla.html. Dopiero tam
-    // uzytkownik ustawia nowe haslo. Nie zdradzamy, czy konto istnieje.
-    var clientForgotBtn = document.getElementById('clientForgotBtn');
-    if(clientForgotBtn){
-      clientForgotBtn.addEventListener('click', async function(){
-        var errEl = document.getElementById('clientLoginError');
-        var email = (document.getElementById('clientEmail').value || '').trim();
-        errEl.className = 'auth-error';
-        if(!email){
-          errEl.textContent = 'Wpisz najpierw swój adres e-mail w polu powyżej.';
-          return;
-        }
-        clientForgotBtn.disabled = true;
-        errEl.textContent = 'Wysyłam…';
-        await sb.auth.resetPasswordForEmail(email, { redirectTo: 'https://autorytet.com.pl/reset-hasla.html' });
-        clientForgotBtn.disabled = false;
-        errEl.className = 'auth-error auth-success';
-        errEl.textContent = 'Jeśli konto o tym adresie istnieje, wysłaliśmy na nie link do ustawienia nowego hasła. Sprawdź skrzynkę, także folder spam.';
-      });
-    }
-
-    // ---------- Zakładki logowanie / rejestracja ----------
-    var kontoTabLogin = document.getElementById('kontoTabLogin');
-    var kontoTabRegister = document.getElementById('kontoTabRegister');
-    var kontoLoginFormEl = document.getElementById('clientLoginForm');
-    var kontoRegisterFormEl = document.getElementById('clientRegisterForm');
-    if(kontoTabLogin && kontoTabRegister){
-      kontoTabLogin.addEventListener('click', function(){
-        kontoTabLogin.classList.add('active');
-        kontoTabRegister.classList.remove('active');
-        kontoLoginFormEl.classList.add('active');
-        kontoRegisterFormEl.classList.remove('active');
-      });
-      kontoTabRegister.addEventListener('click', function(){
-        kontoTabRegister.classList.add('active');
-        kontoTabLogin.classList.remove('active');
-        kontoRegisterFormEl.classList.add('active');
-        kontoLoginFormEl.classList.remove('active');
-      });
-    }
-
-    // ---------- Rejestracja nowego klienta ----------
-    if(kontoRegisterFormEl){
-      kontoRegisterFormEl.addEventListener('submit', async function(e){
-        e.preventDefault();
-        var name = document.getElementById('registerName').value.trim();
-        var phone = document.getElementById('registerPhone').value.trim();
-        var email = document.getElementById('registerEmail').value.trim();
-        var password = document.getElementById('registerPassword').value;
-        var passwordConfirm = document.getElementById('registerPasswordConfirm').value;
-        var errEl = document.getElementById('registerError');
-        errEl.textContent = '';
-        errEl.className = 'auth-error';
-        if(password !== passwordConfirm){
-          errEl.textContent = 'Podane hasła nie są identyczne.';
-          return;
-        }
-        if(password.length < 6){
-          errEl.textContent = 'Hasło musi mieć co najmniej 6 znaków.';
-          return;
-        }
-        var result = await sb.auth.signUp({
-          email: email,
-          password: password,
-          options: { data: { full_name: name, phone: phone } }
-        });
-        if(result.error){
-          errEl.textContent = 'Nie udało się założyć konta: ' + result.error.message;
-          return;
-        }
-        if(result.data && result.data.session){
-          showDashboard(result.data.user);
-        } else {
-          errEl.className = 'auth-error auth-success';
-          errEl.textContent = 'Konto utworzone! Sprawdź swoją skrzynkę e-mail, aby potwierdzić rejestrację, a następnie zaloguj się.';
-          kontoRegisterFormEl.reset();
-        }
-      });
-    }
-
-    // ---------- Wylogowanie ----------
-    var kontoLogoutBtn = document.getElementById('kontoLogoutBtn');
-    if(kontoLogoutBtn){
-      kontoLogoutBtn.addEventListener('click', async function(){
-        await sb.auth.signOut();
-        kontoCart = [];
-        zapiszKoszyk();
-        renderKontoCart();
-        showAuthPanel();
-      });
-    }
-
-    // ---------- Koszyk (rezerwacja aut) ----------
-    function renderKontoCart(){
-      var itemsEl = document.getElementById('kontoCartItems');
-      var reserveBtn = document.getElementById('kontoCartGoBtn');
-      if(!itemsEl) return;
-      if(kontoCart.length === 0){
-        itemsEl.innerHTML = '<div class="konto-cart-empty">Koszyk jest pusty — dodaj auto z listy obok.</div>';
-        if(reserveBtn){ reserveBtn.setAttribute('disabled','disabled'); reserveBtn.style.pointerEvents = 'none'; }
-        return;
-      }
-      itemsEl.innerHTML = kontoCart.map(function(item){
-        var priceTxt = item.price ? new Intl.NumberFormat('pl-PL').format(item.price) + ' zł' : 'Cena na zapytanie';
-        return '' +
-          '<div class="konto-cart-item">' +
-            '<div><div class="name">' + item.brand + ' ' + item.model + '</div><div class="price">' + priceTxt + '</div></div>' +
-            '<button type="button" class="konto-cart-remove" data-remove-id="' + item.id + '">&times;</button>' +
-          '</div>';
-      }).join('');
-      if(reserveBtn){ reserveBtn.removeAttribute('disabled'); reserveBtn.style.pointerEvents = ''; }
-      itemsEl.querySelectorAll('.konto-cart-remove').forEach(function(btn){
-        btn.addEventListener('click', function(){
-          kontoCart = kontoCart.filter(function(c){ return c.id !== btn.getAttribute('data-remove-id'); });
-          zapiszKoszyk();
-          renderKontoCart();
-          var addBtn = document.querySelector('.konto-add-cart-btn[data-car-id="' + btn.getAttribute('data-remove-id') + '"]');
-          if(addBtn){ addBtn.classList.remove('added'); addBtn.textContent = 'Dodaj do koszyka'; }
-        });
-      });
-    }
-    renderKontoCart();
-
-    document.addEventListener('click', function(e){
-      var btn = e.target.closest ? e.target.closest('.konto-add-cart-btn') : null;
-      if(!btn) return;
-      var id = btn.getAttribute('data-car-id');
-      if(kontoCart.some(function(c){ return c.id === id; })) return;
-      kontoCart.push({
-        id: id,
-        brand: btn.getAttribute('data-car-brand') || '',
-        model: btn.getAttribute('data-car-model') || '',
-        price: parseFloat(btn.getAttribute('data-car-price')) || null
-      });
-      btn.classList.add('added');
-      btn.textContent = 'Dodano ✓';
-      zapiszKoszyk();
-      renderKontoCart();
-    });
-
-    // ---------- Powiadomienie e-mail o nowej rezerwacji (do zespołu AUTORYTET) ----------
-    async function sendReservationEmailNotification(rows){
-      var recipients = await getButtonEmails('konto_rezerwacja', ['cezary.kozlowski@autorytet.com.pl', 'uruszula.kaczmarek@autorytet.com.pl', 'ewelina.kozlowska@autorytet.com.pl']);
-      var carsList = rows.map(function(r){
-        var priceTxt = r.car_price ? new Intl.NumberFormat('pl-PL').format(r.car_price) + ' zł' : 'cena na zapytanie';
-        return r.car_brand + ' ' + r.car_model + ' (' + priceTxt + ')';
-      }).join(', ');
-      var clientEmailTxt = (kontoCurrentUser && kontoCurrentUser.email) ? kontoCurrentUser.email : '—';
-      return Promise.allSettled(recipients.map(function(email){
-        var formData = new FormData();
-        formData.append('_subject', 'Nowa rezerwacja online — autorytet.com.pl');
-        formData.append('_captcha', 'false');
-        formData.append('_template', 'table');
-        formData.append('Klient (e-mail)', clientEmailTxt);
-        formData.append('Zarezerwowane auta', carsList);
-        formData.append('Rabat', '-10% na usługi AUTORYTET');
-        return fetch('https://formsubmit.co/ajax/' + encodeURIComponent(email), {
-          method: 'POST',
-          headers: { 'Accept': 'application/json' },
-          body: formData
-        });
-      })).catch(function(){ /* powiadomienie e-mail jest pomocnicze — brak jego wysyłki nie blokuje rezerwacji */ });
-    }
-
-    // ---------- Rezerwacja online ----------
-    // Skladanie rezerwacji przenieslismy na osobna podstrone koszyk.html -
-    // tam klient widzi warunki rezerwacji i (docelowo) oplaca ja online.
-    // Tutaj zostaje tylko podglad koszyka i przejscie dalej.
-
-    // ---------- Historia rezerwacji klienta ----------
-    var STATUS_OPIS = {
-      'nowa': 'Nowa',
-      'oczekuje_na_platnosc': 'Czeka na opłatę',
-      'oplacona': 'Opłacona',
-      'potwierdzona': 'Potwierdzona',
-      'anulowana': 'Anulowana',
-      'zwrocona': 'Zwrócona',
-      'zrealizowana': 'Zrealizowana'
-    };
-    // Statusy, z ktorych klient moze jeszcze zrezygnowac. Baza pilnuje tego
-    // po swojej stronie - to tutaj tylko chowa przycisk, zeby nie kusil.
-    var STATUSY_DO_ANULOWANIA = ['nowa', 'oczekuje_na_platnosc', 'oplacona', 'potwierdzona'];
-
-    function bezpiecznyTekst(t){
+    function esc(t){
       var d = document.createElement('div');
       d.textContent = (t === null || t === undefined) ? '' : String(t);
       return d.innerHTML;
     }
+    function zl(n){
+      if(n === null || n === undefined || n === '') return null;
+      return new Intl.NumberFormat('pl-PL').format(n) + ' zł';
+    }
+    function pokaz(id, tak){
+      var el = document.getElementById(id);
+      if(el) el.style.display = tak ? '' : 'none';
+    }
 
-    async function loadMyReservations(){
-      var listEl = document.getElementById('kontoReservationsList');
-      if(!listEl || !kontoCurrentUser) return;
-      var result = await sb.from('reservations').select('*')
-        .eq('user_id', kontoCurrentUser.id)
-        .order('created_at', { ascending: false }).limit(20);
-      if(result.error || !result.data || result.data.length === 0){
-        listEl.innerHTML = '<div class="konto-reservations-empty">Brak wcześniejszych rezerwacji.</div>';
-        return;
+    // ---------- warunki rezerwacji (ustawiane w CRM, nie w kodzie) ----------
+    var USTAWIENIA_ZAPASOWE = {
+      enabled: true, discount_percent: 10, fee_amount: 0,
+      fee_type: 'zwrotna', refund_days: 7, cancel_allowed: true,
+      terms_text: 'Rezerwacja jest niezobowiązująca. Skontaktujemy się z Tobą, aby potwierdzić dostępność pojazdu.'
+    };
+    async function wczytajUstawienia(){
+      try{
+        var r = await sb.from('reservation_settings').select('*').eq('id', 1).maybeSingle();
+        ustawienia = (!r.error && r.data) ? r.data : USTAWIENIA_ZAPASOWE;
+      } catch(e){ ustawienia = USTAWIENIA_ZAPASOWE; }
+    }
+    function opisOplaty(){
+      var kwota = Number(ustawienia.fee_amount) || 0;
+      if(kwota <= 0) return 'Rezerwacja jest bezpłatna i niezobowiązująca.';
+      var k = zl(kwota);
+      if(ustawienia.fee_type === 'bezzwrotna'){
+        return 'Opłata rezerwacyjna wynosi ' + k + '. W razie rezygnacji opłata nie podlega zwrotowi.';
       }
-      listEl.innerHTML = result.data.map(function(r){
-        var status = r.status || 'nowa';
-        var mozna = STATUSY_DO_ANULOWANIA.indexOf(status) !== -1;
-        var auto = bezpiecznyTekst(((r.car_brand || '') + ' ' + (r.car_model || '')).trim() || 'Pojazd');
-        var nr = r.reservation_number ? bezpiecznyTekst(r.reservation_number) : '';
-        var info = '';
-        if(status === 'anulowana'){
-          info = '<div class="rez-info">Anulowana' +
-                 (r.cancelled_by === 'klient' ? ' przez Ciebie' : ' przez AUTORYTET') + '.</div>';
-        } else if(status === 'potwierdzona'){
-          info = '<div class="rez-info">Doradca potwierdził dostępność pojazdu.</div>';
-        }
-        return '' +
-          '<div class="rez-row" data-rez-id="' + bezpiecznyTekst(r.id) + '">' +
-            '<div class="rez-top">' +
-              '<div><div class="rez-car">' + auto + '</div>' +
-                   (nr ? '<div class="rez-nr">nr ' + nr + '</div>' : '') + '</div>' +
-              '<span class="rez-badge ' + bezpiecznyTekst(status) + '">' +
-                 bezpiecznyTekst(STATUS_OPIS[status] || status) + '</span>' +
-            '</div>' +
-            info +
-            (mozna ? '<button type="button" class="rez-cancel" data-anuluj="' + bezpiecznyTekst(r.id) + '">Anuluj rezerwację</button>' : '') +
-          '</div>';
-      }).join('');
+      if(ustawienia.fee_type === 'zwrotna_do_dni'){
+        return 'Opłata rezerwacyjna wynosi ' + k + '. Zwracamy ją w całości, jeśli anulujesz rezerwację w ciągu ' +
+               (Number(ustawienia.refund_days) || 7) + ' dni.';
+      }
+      return 'Opłata rezerwacyjna wynosi ' + k + '. Przy anulowaniu rezerwacji zwracamy ją w całości.';
+    }
 
-      listEl.querySelectorAll('.rez-cancel').forEach(function(btn){
-        btn.addEventListener('click', async function(){
-          if(!window.confirm('Na pewno anulować tę rezerwację? Tej operacji nie można cofnąć.')) return;
-          btn.disabled = true;
-          btn.textContent = 'Anuluję…';
-          var id = btn.getAttribute('data-anuluj');
-          var res = await sb.from('reservations')
-            .update({ status: 'anulowana', cancel_reason: 'Anulowane przez klienta z panelu' })
-            .eq('id', id).select();
-          if(res.error || !res.data || res.data.length === 0){
-            btn.disabled = false;
-            btn.textContent = 'Anuluj rezerwację';
-            var box = btn.closest('.rez-row');
-            if(box){
-              var w = document.createElement('div');
-              w.className = 'rez-info';
-              w.style.color = '#E4241B';
-              w.textContent = 'Nie udało się anulować: ' +
-                ((res.error && res.error.message) || 'baza odrzuciła zmianę. Zadzwoń do doradcy.');
-              box.appendChild(w);
-            }
-            return;
-          }
-          loadMyReservations();
+    // ---------- widok ----------
+    function rysujKoszyk(){
+      var listaEl = document.getElementById('koszykLista');
+      listaEl.innerHTML = koszyk.map(function(p){
+        var cena = zl(p.price) || 'Cena na zapytanie';
+        return '<div class="koszyk-poz">' +
+                 '<div><div class="nazwa">' + esc((p.brand || '') + ' ' + (p.model || '')) + '</div>' +
+                 '<div class="cena">' + esc(cena) + '</div></div>' +
+                 '<button type="button" class="koszyk-usun" data-usun="' + esc(p.id) + '" title="Usuń">&times;</button>' +
+               '</div>';
+      }).join('');
+      listaEl.querySelectorAll('.koszyk-usun').forEach(function(b){
+        b.addEventListener('click', function(){
+          koszyk = koszyk.filter(function(c){ return String(c.id) !== b.getAttribute('data-usun'); });
+          zapiszKoszyk();
+          odswiez();
         });
       });
+
+      var suma = koszyk.reduce(function(a, p){ return a + (Number(p.price) || 0); }, 0);
+      var rabat = Number(ustawienia.discount_percent) || 0;
+      var pods = '<div class="koszyk-suma"><span>Liczba pojazdów</span><b>' + koszyk.length + '</b></div>';
+      if(suma > 0){
+        pods += '<div class="koszyk-suma"><span>Wartość pojazdów</span><b>' + esc(zl(suma)) + '</b></div>';
+      }
+      if(rabat > 0){
+        pods += '<div class="koszyk-suma"><span>Rabat na usługi AUTORYTET</span><b>-' + rabat + '%</b></div>';
+      }
+      var oplata = Number(ustawienia.fee_amount) || 0;
+      pods += '<div class="koszyk-suma mocna"><span>Do zapłaty teraz</span><b>' +
+              (oplata > 0 ? esc(zl(oplata)) : '0 zł') + '</b></div>';
+      document.getElementById('koszykPodsumowanie').innerHTML = pods;
+
+      var warunki = document.getElementById('koszykWarunki');
+      warunki.innerHTML = '<b>Warunki rezerwacji.</b> ' + esc(opisOplaty()) +
+        (ustawienia.terms_text ? ' ' + esc(ustawienia.terms_text) : '') +
+        (ustawienia.cancel_allowed ? ' Rezerwację możesz anulować w panelu „Moje konto”.' : '');
     }
+
+    function odswiez(){
+      pokaz('koszykLadowanie', false);
+      if(!uzytkownik){
+        pokaz('koszykNiezalogowany', true); pokaz('koszykTresc', false); pokaz('koszykPusty', false);
+        return;
+      }
+      pokaz('koszykNiezalogowany', false);
+      if(koszyk.length === 0){
+        pokaz('koszykPusty', true); pokaz('koszykTresc', false);
+        return;
+      }
+      pokaz('koszykPusty', false); pokaz('koszykTresc', true);
+      rysujKoszyk();
+      przelaczPrzycisk();
+    }
+
+    var zgoda = document.getElementById('koszykZgoda');
+    var zlozBtn = document.getElementById('koszykZlozBtn');
+    function przelaczPrzycisk(){
+      var wolno = zgoda.checked && koszyk.length > 0 && ustawienia.enabled !== false;
+      if(wolno){ zlozBtn.removeAttribute('disabled'); } else { zlozBtn.setAttribute('disabled','disabled'); }
+    }
+    zgoda.addEventListener('change', przelaczPrzycisk);
+
+    // ---------- powiadomienie e-mail do zespolu ----------
+    async function powiadomZespol(wiersze){
+      var odbiorcy = await getButtonEmails('konto_rezerwacja', ['cezary.kozlowski@autorytet.com.pl']);
+      var auta = wiersze.map(function(r){
+        return (r.car_brand || '') + ' ' + (r.car_model || '') + ' (' + (zl(r.car_price) || 'cena na zapytanie') + ')';
+      }).join(', ');
+      return Promise.allSettled(odbiorcy.map(function(email){
+        var fd = new FormData();
+        fd.append('_subject', 'Nowa rezerwacja online — autorytet.com.pl');
+        fd.append('_captcha', 'false');
+        fd.append('Klient', uzytkownik.email || '—');
+        fd.append('Pojazdy', auta);
+        return fetch('https://formsubmit.co/ajax/' + email, { method: 'POST', body: fd });
+      }));
+    }
+
+    // ---------- zlozenie rezerwacji ----------
+    zlozBtn.addEventListener('click', async function(){
+      if(!uzytkownik || koszyk.length === 0) return;
+      var statusEl = document.getElementById('koszykStatus');
+      statusEl.textContent = '';
+      statusEl.className = 'konto-cart-status';
+      zlozBtn.setAttribute('disabled','disabled');
+      zlozBtn.textContent = 'Wysyłanie…';
+      try{
+        // Status 'nowa': rezerwacja bez oplaty. Gdy podepniemy bramke,
+        // w tym miejscu pojawi sie 'oczekuje_na_platnosc' i przekierowanie
+        // do platnosci - reszta strony zostaje bez zmian.
+        var wiersze = koszyk.map(function(p){
+          return {
+            user_id: uzytkownik.id,
+            car_id: String(p.id),
+            car_brand: p.brand || '',
+            car_model: p.model || '',
+            car_price: p.price || null,
+            discount_percent: Number(ustawienia.discount_percent) || 10,
+            status: 'nowa'
+          };
+        });
+        var res = await sb.from('reservations').insert(wiersze).select();
+        if(res.error) throw new Error(res.error.message);
+
+        powiadomZespol(wiersze);
+        koszyk = [];
+        zapiszKoszyk();
+
+        var numery = (res.data || []).map(function(r){ return r.reservation_number; }).filter(Boolean);
+        var box = document.getElementById('koszykSukces');
+        box.innerHTML = '<h2>Rezerwacja przyjęta</h2>' +
+          '<p style="font-size:13.5px;line-height:1.6;">Skontaktujemy się z Tobą, żeby potwierdzić dostępność pojazdu.</p>' +
+          (numery.length ? '<div class="numery">' + numery.map(esc).join('<br>') + '</div>' +
+             '<p style="font-size:12.5px;color:#6B6B6B;">Podaj ten numer, gdy będziesz do nas dzwonić.</p>' : '') +
+          '<a class="konto-cart-go" style="max-width:280px;margin-top:16px;" href="konto.html">Wróć do swojego konta</a>';
+        pokaz('koszykTresc', false);
+        pokaz('koszykSukces', true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch(err){
+        statusEl.textContent = 'Nie udało się złożyć rezerwacji: ' + (err.message || 'spróbuj ponownie.');
+        statusEl.className = 'konto-cart-status error';
+        zlozBtn.removeAttribute('disabled');
+        zlozBtn.textContent = 'Złóż rezerwację';
+      }
+    });
+
+    // ---------- start ----------
+    (async function(){
+      await wczytajUstawienia();
+      var sesja = await sb.auth.getSession();
+      uzytkownik = sesja.data.session ? sesja.data.session.user : null;
+      if(ustawienia.enabled === false){
+        document.getElementById('koszykPlatnoscOpis').textContent =
+          'Rezerwacje online są chwilowo wyłączone. Zadzwoń do doradcy, chętnie zarezerwujemy auto telefonicznie.';
+      }
+      odswiez();
+    })();
   })();
 </script>
+
 </body>
 </html>

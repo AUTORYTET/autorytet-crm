@@ -675,6 +675,15 @@
     .porow-summary{ flex-direction:column; align-items:flex-start; }
     .porow-summary-detail{ gap:16px; }
   }
+
+  /* --- link resetu hasla (dodane) --- */
+  .auth-forgot{
+    display:block;width:100%;margin-top:10px;background:none;border:none;
+    font-size:12.5px;color:#6B6B6B;text-decoration:underline;cursor:pointer;text-align:center;
+    font-family:inherit;
+  }
+  .auth-forgot:hover{ color:var(--red,#E4241B); }
+
 </style>
 </head>
 <body>
@@ -741,6 +750,7 @@
       <input type="password" id="adminPassword" required placeholder="••••••••">
       <div class="auth-error" id="adminLoginError"></div>
       <button type="submit" class="btn-red auth-submit">Zaloguj się</button>
+      <button type="button" class="auth-forgot" id="adminForgotBtn">Nie pamiętam hasła</button>
     </form>
   </div>
 </div>
@@ -965,6 +975,29 @@
       }
       window.location.href = '/crm';
     });
+
+    // ---------- Reset hasla (dodane 2026-09-09) ----------
+    // Supabase wysyla link, ktory prowadzi na reset-hasla.html. Dopiero tam
+    // uzytkownik ustawia nowe haslo. Nie zdradzamy, czy konto istnieje.
+    var adminForgotBtn = document.getElementById('adminForgotBtn');
+    if(adminForgotBtn){
+      adminForgotBtn.addEventListener('click', async function(){
+        var errEl = document.getElementById('adminLoginError');
+        var email = (document.getElementById('adminEmail').value || '').trim();
+        errEl.className = 'auth-error';
+        if(!email){
+          errEl.textContent = 'Wpisz najpierw swój adres e-mail w polu powyżej.';
+          return;
+        }
+        adminForgotBtn.disabled = true;
+        errEl.textContent = 'Wysyłam…';
+        await sb.auth.resetPasswordForEmail(email, { redirectTo: 'https://autorytet.com.pl/reset-hasla.html' });
+        adminForgotBtn.disabled = false;
+        errEl.className = 'auth-error auth-success';
+        errEl.textContent = 'Jeśli konto o tym adresie istnieje, wysłaliśmy na nie link do ustawienia nowego hasła. Sprawdź skrzynkę, także folder spam.';
+      });
+    }
+
     // ---------- Dynamiczne oferty (samochody z bazy) ----------
     function formatPrice(n){
       if(n === null || n === undefined || n === '') return null;
