@@ -176,5 +176,106 @@ export default async function handler(req, res) {
     return;
   }
 
+  // ==========================================================================
+  // AKCJA: ustawienie nowego hasla innej osobie
+  // ==========================================================================
+  if (akcja === "setPassword") {
+    const userId = (body.userId || "").toString();
+    if (!userId) {
+      res.status(400).json({ error: "Brak wskazanego konta." });
+      return;
+    }
+    if (userId === proszacy.id) {
+      res.status(400).json({ error: "Swoje hasło zmień w Ustawienia → Hasło." });
+      return;
+    }
+
+    const haslo = (body.password || "").toString().trim() || losoweHaslo();
+    if (haslo.length < 8) {
+      res.status(400).json({ error: "Hasło musi mieć co najmniej 8 znaków." });
+      return;
+    }
+
+    const { error } = await admin.auth.admin.updateUserById(userId, { password: haslo });
+    if (error) {
+      res.status(400).json({ error: "Nie udało się zmienić hasła: " + error.message });
+      return;
+    }
+
+    res.status(200).json({
+      ok: true,
+      tempPassword: haslo,
+      info:
+        "Hasło zmienione. Przekaż je tej osobie bezpiecznie (np. telefonicznie) " +
+        "i poproś, żeby ustawiła własne w Ustawienia → Hasło.",
+    });
+    return;
+  }
+
+  // ==========================================================================
+  // AKCJA: usuniecie konta
+  // ==========================================================================
+  // Usuniecie konta jest nieodwracalne, wiec przed wykonaniem sprawdzamy, czy
+  // nie pociagnie za soba danych, ktorych nie chcemy stracic.
+  if (akcja === "deleteUser") {
+    const userId = (body.userId || "").toString();
+    if (!userId) {
+      res.status(400).json({ error: "Brak wskazanego konta." });
+      return;
+    }
+    if (userId === proszacy.id) {
+      res.status(400).json({ error: "Nie możesz usunąć własnego konta." });
+      return;
+    }
+
+    const { data: profil } = await admin
+      .from("profiles").select("role, email").eq("id", userId).maybeSingle();
+
+    // 1) Konta pracownikow zostaja. Sa powiazane z zadaniami, szansami
+    //    sprzedazy i historia kontaktu — usuniecie zerwaloby te powiazania.
+    if (profil && (profil.role === "admin" || profil.role === "doradca")) {
+      res.status(409).json({
+        error:
+          "To konto pracownika jest powiązane z danymi w CRM (zadania, szanse sprzedaży, " +
+          "historia kontaktu). Zamiast usuwać — odbierz mu dostęp, zmieniając rolę na „Klient” " +
+          "w zakładce „Zespół”.",
+      });
+      return;
+    }
+
+    // 2) Konto z rezerwacjami zostaje — inaczej stracilibysmy historie sprzedazy.
+    const { count, error: countError } = await admin
+      .from("reservations").select("id", { count: "exact", head: true }).eq("user_id", userId);
+
+    if (countError) {
+      res.status(500).json({ error: "Nie udało się sprawdzić rezerwacji: " + countError.message });
+      return;
+    }
+    if (count && count > 0) {
+      res.status(409).json({
+        error:
+          "To konto ma " + count + " rezerwacji w systemie. Usunięcie go skasowałoby tę historię, " +
+          "więc konto zostaje. Jeśli klient prosi o usunięcie danych (RODO), napisz o tym Claude — " +
+          "przygotuję bezpieczne anonimizowanie zamiast kasowania.",
+      });
+      return;
+    }
+
+    await admin.from("profiles").delete().eq("id", userId);
+    const { error } = await admin.auth.admin.deleteUser(userId);
+    if (error) {
+      res.status(400).json({ error: "Nie udało się usunąć konta: " + error.message });
+      return;
+    }
+
+    res.status(200).json({
+      ok: true,
+      deleted: true,
+      email: profil ? profil.email : null,
+      info: "Konto zostało usunięte.",
+    });
+    return;
+  }
+
   res.status(400).json({ error: "Nieznana operacja." });
 }
